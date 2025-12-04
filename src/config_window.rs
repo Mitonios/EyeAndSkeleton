@@ -33,10 +33,6 @@ impl ConfigWindow {
             || self.config.standup_interval != self.original_config.standup_interval
     }
 
-    /// Reset config về giá trị gốc
-    fn reset(&mut self) {
-        self.config = self.original_config.clone();
-    }
 }
 
 impl eframe::App for ConfigWindow {
@@ -174,11 +170,6 @@ pub fn show_config_window_with_updates(
     Ok(())
 }
 
-/// Hiển thị config window (legacy function)
-pub fn show_config_window(config: Arc<AppConfig>) -> Result<()> {
-    let (tx, _rx) = mpsc::channel(1); // Dummy channel
-    show_config_window_with_updates(config, tx)
-}
 
 /// Config window với khả năng gửi updates
 pub struct ConfigWindowWithUpdates {

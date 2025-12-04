@@ -65,52 +65,6 @@ impl TimerManager {
                   self.config.blink_interval, self.config.standup_interval);
     }
 
-    /// Chạy timers và gửi events
-    pub async fn run(mut self, tx: mpsc::Sender<TimerEvent>) -> anyhow::Result<()> {
-        log::info!("Bắt đầu chạy timers: blink={}min, standup={}min",
-                  self.config.blink_interval, self.config.standup_interval);
-
-        loop {
-            tokio::select! {
-                // Blink timer fired
-                _ = self.blink_interval.tick() => {
-                    // Kiểm tra xem standup có trùng không
-                    let now = time::Instant::now();
-                    let time_to_standup = self.next_standup_time.saturating_duration_since(now);
-
-                    // Nếu standup sẽ hiển thị trong vòng 10 giây tới, bỏ qua blink
-                    if time_to_standup <= Duration::from_secs(10) {
-                        log::info!("Bỏ qua blink vì standup sắp hiển thị ({}s)", time_to_standup.as_secs());
-                        continue;
-                    }
-
-                    log::info!("Timer blink kích hoạt");
-                    if tx.send(TimerEvent::ShowBlink).await.is_err() {
-                        log::warn!("Không thể gửi TimerEvent::ShowBlink");
-                        break;
-                    }
-                }
-
-                // Standup timer fired
-                _ = self.standup_interval.tick() => {
-                    log::info!("Timer standup kích hoạt");
-
-                    // Cập nhật next standup time
-                    self.next_standup_time = time::Instant::now() +
-                        Duration::from_secs(self.config.standup_interval as u64 * 60);
-
-                    if tx.send(TimerEvent::ShowStandUp).await.is_err() {
-                        log::warn!("Không thể gửi TimerEvent::ShowStandUp");
-                        break;
-                    }
-                }
-            }
-        }
-
-        log::info!("Timer manager dừng hoạt động");
-        Ok(())
-    }
-
     /// Chạy timers với khả năng update config
     pub async fn run_with_updates(
         mut self,
