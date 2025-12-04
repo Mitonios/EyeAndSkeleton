@@ -1,8 +1,69 @@
 use crate::config::AppConfig;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time;
+use std::sync::OnceLock;
+use std::sync::Mutex;
+
+/// Global timer info cho countdown display
+pub static TIMER_INFO: OnceLock<Mutex<TimerInfo>> = OnceLock::new();
+
+/// Thông tin timer để hiển thị countdown
+#[derive(Clone)]
+pub struct TimerInfo {
+    pub blink_next: Instant,
+    pub standup_next: Instant,
+    #[allow(dead_code)]
+    pub blink_interval_mins: u32,
+    #[allow(dead_code)]
+    pub standup_interval_mins: u32,
+}
+
+impl TimerInfo {
+    /// Lấy thời gian còn lại đến blink (giây)
+    pub fn blink_remaining_secs(&self) -> u64 {
+        let now = Instant::now();
+        if self.blink_next > now {
+            self.blink_next.duration_since(now).as_secs()
+        } else {
+            0
+        }
+    }
+
+    /// Lấy thời gian còn lại đến standup (giây)
+    pub fn standup_remaining_secs(&self) -> u64 {
+        let now = Instant::now();
+        if self.standup_next > now {
+            self.standup_next.duration_since(now).as_secs()
+        } else {
+            0
+        }
+    }
+}
+
+/// Lấy timer info hiện tại
+pub fn get_timer_info() -> Option<TimerInfo> {
+    TIMER_INFO.get()?.lock().ok().map(|info| info.clone())
+}
+
+/// Update timer info
+fn update_timer_info(blink_next: Instant, standup_next: Instant, blink_interval_mins: u32, standup_interval_mins: u32) {
+    let info = TimerInfo {
+        blink_next,
+        standup_next,
+        blink_interval_mins,
+        standup_interval_mins,
+    };
+    
+    if let Some(mutex) = TIMER_INFO.get() {
+        if let Ok(mut guard) = mutex.lock() {
+            *guard = info;
+        }
+    } else {
+        let _ = TIMER_INFO.set(Mutex::new(info));
+    }
+}
 
 /// Events sent from timer to main thread
 #[derive(Debug)]
@@ -23,6 +84,7 @@ impl TimerManager {
     /// Tạo mới TimerManager
     pub fn new(config: Arc<AppConfig>) -> Self {
         let now = time::Instant::now();
+        let std_now = Instant::now();
 
         // Tạo blink interval
         let blink_duration = Duration::from_secs(config.blink_interval as u64 * 60);
@@ -36,6 +98,14 @@ impl TimerManager {
 
         let next_standup_time = now + standup_duration;
 
+        // Update global timer info
+        update_timer_info(
+            std_now + blink_duration,
+            std_now + standup_duration,
+            config.blink_interval,
+            config.standup_interval,
+        );
+
         Self {
             config,
             blink_interval,
@@ -48,6 +118,7 @@ impl TimerManager {
     pub fn update_config(&mut self, config: Arc<AppConfig>) {
         self.config = config.clone();
         let now = time::Instant::now();
+        let std_now = Instant::now();
 
         // Restart blink timer
         let blink_duration = Duration::from_secs(self.config.blink_interval as u64 * 60);
@@ -60,6 +131,14 @@ impl TimerManager {
         self.standup_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
         self.next_standup_time = now + standup_duration;
+
+        // Update global timer info
+        update_timer_info(
+            std_now + blink_duration,
+            std_now + standup_duration,
+            self.config.blink_interval,
+            self.config.standup_interval,
+        );
 
         log::info!("Đã cập nhật timers với config mới: blink={}min, standup={}min",
                   self.config.blink_interval, self.config.standup_interval);
@@ -87,6 +166,7 @@ impl TimerManager {
                 _ = self.blink_interval.tick() => {
                     // Kiểm tra xem standup có trùng không
                     let now = time::Instant::now();
+                    let std_now = Instant::now();
                     let time_to_standup = self.next_standup_time.saturating_duration_since(now);
 
                     // Nếu standup sẽ hiển thị trong vòng 10 giây tới, bỏ qua blink
@@ -96,6 +176,18 @@ impl TimerManager {
                     }
 
                     log::info!("Timer blink kích hoạt");
+
+                    // Reset blink countdown
+                    let blink_duration = Duration::from_secs(self.config.blink_interval as u64 * 60);
+                    if let Some(info) = get_timer_info() {
+                        update_timer_info(
+                            std_now + blink_duration,
+                            info.standup_next,
+                            self.config.blink_interval,
+                            self.config.standup_interval,
+                        );
+                    }
+
                     if tx.send(TimerEvent::ShowBlink).await.is_err() {
                         log::warn!("Không thể gửi TimerEvent::ShowBlink");
                         break;
@@ -105,10 +197,21 @@ impl TimerManager {
                 // Standup timer fired
                 _ = self.standup_interval.tick() => {
                     log::info!("Timer standup kích hoạt");
+                    let std_now = Instant::now();
 
                     // Cập nhật next standup time
-                    self.next_standup_time = time::Instant::now() +
-                        Duration::from_secs(self.config.standup_interval as u64 * 60);
+                    let standup_duration = Duration::from_secs(self.config.standup_interval as u64 * 60);
+                    self.next_standup_time = time::Instant::now() + standup_duration;
+
+                    // Reset standup countdown
+                    if let Some(info) = get_timer_info() {
+                        update_timer_info(
+                            info.blink_next,
+                            std_now + standup_duration,
+                            self.config.blink_interval,
+                            self.config.standup_interval,
+                        );
+                    }
 
                     if tx.send(TimerEvent::ShowStandUp).await.is_err() {
                         log::warn!("Không thể gửi TimerEvent::ShowStandUp");

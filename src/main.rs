@@ -1,3 +1,6 @@
+// Ẩn console window trên Windows
+#![windows_subsystem = "windows"]
+
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -28,7 +31,7 @@ async fn main() -> Result<()> {
 
     // Setup tray icon and menu
     let (tray_tx, mut tray_rx) = mpsc::channel(32);
-    tray::init_tray(tray_tx)?;
+    let _tray_manager = tray::init_tray(tray_tx)?; // Giữ alive để tray icon không bị xóa
 
     // Setup timers
     let (timer_tx, mut timer_rx) = mpsc::channel(32);
@@ -36,6 +39,13 @@ async fn main() -> Result<()> {
 
     // Channel for config updates from config window
     let (config_update_tx, mut config_update_rx) = mpsc::channel::<Arc<AppConfig>>(32);
+
+    // Mở Config window khi khởi động
+    log::info!("Mở Config window khi khởi động");
+    config_window::show_config_dialog(
+        config_arc.clone(),
+        Some(config_update_tx.clone()),
+    );
 
     // Main event loop
     loop {
@@ -69,15 +79,11 @@ async fn main() -> Result<()> {
             Some(event) = tray_rx.recv() => {
                 match event {
                     tray::TrayEvent::ShowConfig => {
-                        // Open config window in separate thread
-                        let config_clone = config_arc.clone();
-                        let config_update_tx_clone = config_update_tx.clone();
-                        std::thread::spawn(move || {
-                            match config_window::show_config_window_with_updates(config_clone, config_update_tx_clone) {
-                                Ok(_) => log::info!("Config window closed"),
-                                Err(e) => log::error!("Lỗi khi mở config window: {}", e),
-                            }
-                        });
+                        log::info!("Mở Config window");
+                        config_window::show_config_dialog(
+                            config_arc.clone(),
+                            Some(config_update_tx.clone()),
+                        );
                     }
                     tray::TrayEvent::Exit => {
                         log::info!("Nhận lệnh exit từ tray menu");

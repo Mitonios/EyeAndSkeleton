@@ -2,9 +2,9 @@ use windows::Win32::Foundation::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::core::PCWSTR;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use anyhow::Result;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 /// Loại overlay để hiển thị
@@ -14,30 +14,98 @@ pub enum OverlayType {
     StandUp,
 }
 
+/// Thời gian hiển thị overlay (5 giây)
+const OVERLAY_DURATION_SECS: u64 = 5;
+
+/// Số frame animation
+const ANIMATION_FRAMES: u32 = 4;
+
+/// Thời gian mỗi frame (ms)
+const FRAME_DURATION_MS: u64 = 500;
+
+/// Animation frames cho mỗi loại
+fn get_animation_frames(overlay_type: OverlayType) -> Vec<&'static str> {
+    match overlay_type {
+        OverlayType::Blink => vec!["👁️", "😑", "👁️", "😑"], // Mở - Nhắm - Mở - Nhắm
+        OverlayType::StandUp => vec!["🧎", "🧍", "🚶", "💪"], // Quỳ - Đứng - Đi - Mạnh mẽ
+    }
+}
+
+/// Shared state cho animation
+struct AnimationState {
+    active: AtomicBool,
+    current_frame: AtomicU32,
+    overlay_type: OverlayType,
+}
+
+/// Global animation state (để window_proc truy cập)
+static mut ANIM_STATE: Option<*const AnimationState> = None;
+
 /// Hiển thị overlay animation
 pub fn show_overlay(overlay_type: OverlayType) -> Result<()> {
     log::info!("Hiển thị overlay: {:?}", overlay_type);
 
-    // Tạo shared state để quản lý window lifecycle
-    let window_active = Arc::new(AtomicBool::new(true));
+    // Tạo shared state
+    let state = Arc::new(AnimationState {
+        active: AtomicBool::new(true),
+        current_frame: AtomicU32::new(0),
+        overlay_type,
+    });
+
+    // Store pointer để window_proc truy cập
+    unsafe {
+        ANIM_STATE = Some(Arc::as_ptr(&state));
+    }
+
+    // Clone cho thread
+    let state_clone = state.clone();
 
     // Spawn thread để tạo và quản lý window
-    let window_active_clone = window_active.clone();
     std::thread::spawn(move || {
-        if let Err(e) = create_overlay_window(overlay_type, window_active_clone) {
+        if let Err(e) = create_overlay_window(state_clone) {
             log::error!("Lỗi khi tạo overlay window: {}", e);
         }
     });
 
-    // Đợi 4 giây rồi tắt
-    std::thread::sleep(Duration::from_secs(4));
-    window_active.store(false, Ordering::SeqCst);
+    // Thread để update animation frames
+    let state_anim = state.clone();
+    std::thread::spawn(move || {
+        let start = Instant::now();
+        let mut last_frame_time = start;
+
+        while state_anim.active.load(Ordering::SeqCst) {
+            // Check timeout
+            if start.elapsed() >= Duration::from_secs(OVERLAY_DURATION_SECS) {
+                state_anim.active.store(false, Ordering::SeqCst);
+                break;
+            }
+
+            // Update frame
+            if last_frame_time.elapsed() >= Duration::from_millis(FRAME_DURATION_MS) {
+                let current = state_anim.current_frame.load(Ordering::SeqCst);
+                let next = (current + 1) % ANIMATION_FRAMES;
+                state_anim.current_frame.store(next, Ordering::SeqCst);
+                last_frame_time = Instant::now();
+            }
+
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+
+    // Đợi 5 giây rồi cleanup
+    std::thread::sleep(Duration::from_secs(OVERLAY_DURATION_SECS));
+    state.active.store(false, Ordering::SeqCst);
+
+    // Clear global pointer
+    unsafe {
+        ANIM_STATE = None;
+    }
 
     Ok(())
 }
 
 /// Tạo overlay window
-fn create_overlay_window(overlay_type: OverlayType, active: Arc<AtomicBool>) -> Result<()> {
+fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
     unsafe {
         // Đăng ký window class
         let class_name_wide: Vec<u16> = "BlinkReminderOverlayClass\0".encode_utf16().collect();
@@ -55,23 +123,20 @@ fn create_overlay_window(overlay_type: OverlayType, active: Arc<AtomicBool>) -> 
             lpszClassName: PCWSTR::from_raw(class_name.as_ptr()),
         };
 
-        if RegisterClassW(&wc) == 0 {
-            return Err(anyhow::anyhow!("Không thể đăng ký window class"));
-        }
+        RegisterClassW(&wc);
 
         // Lấy thông tin màn hình
         let screen_width = GetSystemMetrics(SM_CXSCREEN);
-        let _screen_height = GetSystemMetrics(SM_CYSCREEN);
 
         // Vị trí góc phải trên
         let window_width = 200;
         let window_height = 200;
-        let x = screen_width - window_width - 20; // Margin 20px
+        let x = screen_width - window_width - 20;
         let y = 20;
 
         // Tạo window
         let hwnd = CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TRANSPARENT,
+            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW,
             PCWSTR::from_raw(class_name.as_ptr()),
             PCWSTR::null(),
             WS_POPUP,
@@ -86,8 +151,8 @@ fn create_overlay_window(overlay_type: OverlayType, active: Arc<AtomicBool>) -> 
             return Err(anyhow::anyhow!("Không thể tạo overlay window"));
         }
 
-        // Làm window transparent
-        if let Err(e) = SetLayeredWindowAttributes(hwnd, COLORREF(0), 240, LWA_ALPHA) {
+        // Làm window transparent - dùng màu trắng làm color key
+        if let Err(e) = SetLayeredWindowAttributes(hwnd, COLORREF(0x00FFFFFF), 0, LWA_COLORKEY) {
             log::warn!("Không thể set layered attributes: {:?}", e);
         }
 
@@ -96,16 +161,37 @@ fn create_overlay_window(overlay_type: OverlayType, active: Arc<AtomicBool>) -> 
         UpdateWindow(hwnd);
 
         // Vẽ emoji ban đầu
-        draw_emoji(hwnd, overlay_type)?;
+        draw_emoji(hwnd, state.overlay_type, 0)?;
 
-        // Message loop
+        // Set timer để update animation (100ms)
+        SetTimer(hwnd, 1, 100, None);
+
+        // Message loop với animation
         let mut msg = MSG::default();
-        while active.load(Ordering::SeqCst) && GetMessageW(&mut msg, hwnd, 0, 0).as_bool() {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
+        let mut last_frame = 0u32;
+
+        while state.active.load(Ordering::SeqCst) {
+            // Check for messages với timeout
+            if PeekMessageW(&mut msg, hwnd, 0, 0, PM_REMOVE).as_bool() {
+                if msg.message == WM_QUIT {
+                    break;
+                }
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+
+            // Update animation
+            let current_frame = state.current_frame.load(Ordering::SeqCst);
+            if current_frame != last_frame {
+                draw_emoji(hwnd, state.overlay_type, current_frame)?;
+                last_frame = current_frame;
+            }
+
+            std::thread::sleep(Duration::from_millis(16)); // ~60 FPS
         }
 
         // Cleanup
+        let _ = KillTimer(hwnd, 1);
         let _ = DestroyWindow(hwnd);
         let _ = UnregisterClassW(PCWSTR::from_raw(class_name.as_ptr()), HINSTANCE::default());
 
@@ -114,26 +200,29 @@ fn create_overlay_window(overlay_type: OverlayType, active: Arc<AtomicBool>) -> 
     }
 }
 
-/// Vẽ emoji lên window
-fn draw_emoji(hwnd: HWND, overlay_type: OverlayType) -> Result<()> {
+/// Vẽ emoji lên window với frame index
+fn draw_emoji(hwnd: HWND, overlay_type: OverlayType, frame_index: u32) -> Result<()> {
     unsafe {
         let hdc = GetDC(hwnd);
         if hdc.is_invalid() {
             return Err(anyhow::anyhow!("Không thể lấy device context"));
         }
 
-        // Set background mode to transparent
-        SetBkMode(hdc, TRANSPARENT);
+        // Fill background với màu trắng (sẽ trở thành transparent qua color key)
+        let mut rect = RECT::default();
+        let _ = GetClientRect(hwnd, &mut rect);
+        let brush = CreateSolidBrush(COLORREF(0x00FFFFFF)); // White = transparent
+        FillRect(hdc, &rect, brush);
+        DeleteObject(brush);
 
-        // Set text color to white for visibility
-        SetTextColor(hdc, COLORREF(0x00FFFFFF));
+        // Set background mode to transparent for text
+        SetBkMode(hdc, TRANSPARENT);
 
         // Tạo font lớn cho emoji
         let font_name_wide: Vec<u16> = "Segoe UI Emoji\0".encode_utf16().collect();
         let font = CreateFontW(
-            120, 0, 0, 0, 400, 0, 0, 0,  // FW_NORMAL = 400
-            0, 0, 0,  // DEFAULT_CHARSET = 0, OUT_DEFAULT_PRECIS = 0, CLIP_DEFAULT_PRECIS = 0
-            0, 0, PCWSTR::from_raw(font_name_wide.as_ptr()),  // DEFAULT_QUALITY = 0, DEFAULT_PITCH = 0
+            120, 0, 0, 0, 400, 0, 0, 0,
+            0, 0, 0, 0, 0, PCWSTR::from_raw(font_name_wide.as_ptr()),
         );
 
         if font.is_invalid() {
@@ -144,17 +233,15 @@ fn draw_emoji(hwnd: HWND, overlay_type: OverlayType) -> Result<()> {
         // Select font
         let old_font = SelectObject(hdc, font);
 
-        // Chọn emoji
-        let emoji = match overlay_type {
-            OverlayType::Blink => "👁️",
-            OverlayType::StandUp => "🧍",
-        };
+        // Lấy emoji frame
+        let frames = get_animation_frames(overlay_type);
+        let emoji = frames.get(frame_index as usize).unwrap_or(&frames[0]);
 
-        // Convert emoji to wide string (without null terminator for TextOutW)
+        // Convert emoji to wide string
         let emoji_wide: Vec<u16> = emoji.encode_utf16().collect();
 
         // Vẽ emoji ở center
-        TextOutW(hdc, 50, 50, &emoji_wide);
+        TextOutW(hdc, 40, 40, &emoji_wide);
 
         // Cleanup
         SelectObject(hdc, old_font);
@@ -174,10 +261,14 @@ unsafe extern "system" fn window_proc(
 ) -> LRESULT {
     match msg {
         WM_PAINT => {
-            // Repaint if needed
             let mut ps = PAINTSTRUCT::default();
             let _hdc = BeginPaint(hwnd, &mut ps);
             let _ = EndPaint(hwnd, &ps);
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            // Trigger redraw
+            InvalidateRect(hwnd, None, FALSE);
             LRESULT(0)
         }
         WM_DESTROY => {
