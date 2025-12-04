@@ -45,7 +45,11 @@ unsafe extern "system" fn tray_wnd_proc(
                     show_context_menu(hwnd);
                 }
                 WM_LBUTTONUP => {
-                    log::info!("Left-click detected");
+                    log::info!("Left-click detected, opening config window");
+                    // Gửi event để mở Config window
+                    if let Some(tx) = TRAY_SENDER.get() {
+                        let _ = tx.try_send(TrayEvent::ShowConfig);
+                    }
                 }
                 _ => {}
             }

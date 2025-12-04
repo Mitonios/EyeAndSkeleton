@@ -12,6 +12,7 @@ mod overlay;
 mod timer;
 mod tray;
 mod config_window;
+mod singleton;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -19,6 +20,17 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     log::info!("Khởi động Blink Reminder...");
+
+    // Kiểm tra singleton - chỉ cho phép 1 instance chạy
+    let _singleton_guard = match singleton::acquire_singleton()? {
+        Some(guard) => guard,
+        None => {
+            // Đã có instance đang chạy, signal đã được gửi
+            log::info!("Đã có instance đang chạy, thoát...");
+            return Ok(());
+        }
+    };
+    log::info!("Singleton acquired");
 
     // Load configuration
     let config = config::load_config()?;
@@ -40,6 +52,15 @@ async fn main() -> Result<()> {
     // Channel for config updates from config window
     let (config_update_tx, mut config_update_rx) = mpsc::channel::<Arc<AppConfig>>(32);
 
+    // Tạo channel cho IPC (singleton signal)
+    let (ipc_tx, mut ipc_rx) = mpsc::channel::<()>(32);
+    
+    // Tạo IPC window để nhận signal từ instances khác
+    let ipc_tx_clone = ipc_tx.clone();
+    singleton::create_ipc_window(move || {
+        let _ = ipc_tx_clone.try_send(());
+    })?;
+
     // Mở Config window khi khởi động
     log::info!("Mở Config window khi khởi động");
     config_window::show_config_dialog(
@@ -50,6 +71,15 @@ async fn main() -> Result<()> {
     // Main event loop
     loop {
         tokio::select! {
+            // Handle IPC signal (từ instance khác)
+            Some(_) = ipc_rx.recv() => {
+                log::info!("Nhận signal từ instance khác, mở Config window");
+                config_window::show_config_dialog(
+                    config_arc.clone(),
+                    Some(config_update_tx.clone()),
+                );
+            }
+
             // Handle config updates
             Some(new_config) = config_update_rx.recv() => {
                 log::info!("Nhận config update từ config window");
