@@ -1,12 +1,12 @@
-use windows::Win32::Foundation::*;
-use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::Win32::Graphics::Gdi::*;
-use windows::core::PCWSTR;
-use std::time::{Duration, Instant};
+use crate::config::OverlayPosition;
 use anyhow::Result;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use crate::config::OverlayPosition;
+use std::time::{Duration, Instant};
+use windows::core::PCWSTR;
+use windows::Win32::Foundation::*;
+use windows::Win32::Graphics::Gdi::*;
+use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Loại overlay để hiển thị
 #[derive(Debug, Clone, Copy)]
@@ -18,18 +18,20 @@ pub enum OverlayType {
 /// Thời gian hiển thị overlay (5 giây)
 const OVERLAY_DURATION_SECS: u64 = 5;
 
-/// Số frame animation
-const ANIMATION_FRAMES: u32 = 4;
-
 /// Thời gian mỗi frame (ms)
-const FRAME_DURATION_MS: u64 = 500;
+const FRAME_DURATION_MS: u64 = 400;
 
 /// Animation frames cho mỗi loại
 fn get_animation_frames(overlay_type: OverlayType) -> Vec<&'static str> {
     match overlay_type {
-        OverlayType::Blink => vec!["👁️", "😑", "👁️", "😑"], // Mở - Nhắm - Mở - Nhắm
-        OverlayType::StandUp => vec!["🧎", "🧍", "🚶", "💪"], // Quỳ - Đứng - Đi - Mạnh mẽ
+        OverlayType::Blink => vec!["😌", "🙂"],   // Nhắm - Mở
+        OverlayType::StandUp => vec!["🧍", "🧎"], // Đứng - Quỳ
     }
+}
+
+/// Lấy số frame của animation
+fn get_animation_frame_count(overlay_type: OverlayType) -> u32 {
+    get_animation_frames(overlay_type).len() as u32
 }
 
 /// Shared state cho animation
@@ -91,7 +93,8 @@ pub fn show_overlay(overlay_type: OverlayType) -> Result<()> {
             // Update frame
             if last_frame_time.elapsed() >= Duration::from_millis(FRAME_DURATION_MS) {
                 let current = state_anim.current_frame.load(Ordering::SeqCst);
-                let next = (current + 1) % ANIMATION_FRAMES;
+                let frame_count = get_animation_frame_count(state_anim.overlay_type);
+                let next = (current + 1) % frame_count;
                 state_anim.current_frame.store(next, Ordering::SeqCst);
                 last_frame_time = Instant::now();
             }
@@ -163,7 +166,10 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
             PCWSTR::from_raw(class_name.as_ptr()),
             PCWSTR::null(),
             WS_POPUP,
-            x, y, window_width, window_height,
+            x,
+            y,
+            window_width,
+            window_height,
             HWND::default(),
             HMENU::default(),
             HINSTANCE::default(),
@@ -244,8 +250,20 @@ fn draw_emoji(hwnd: HWND, overlay_type: OverlayType, frame_index: u32) -> Result
         // Tạo font lớn cho emoji
         let font_name_wide: Vec<u16> = "Segoe UI Emoji\0".encode_utf16().collect();
         let font = CreateFontW(
-            120, 0, 0, 0, 400, 0, 0, 0,
-            0, 0, 0, 0, 0, PCWSTR::from_raw(font_name_wide.as_ptr()),
+            120,
+            0,
+            0,
+            0,
+            400,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            PCWSTR::from_raw(font_name_wide.as_ptr()),
         );
 
         if font.is_invalid() {
