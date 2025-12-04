@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use crate::config::OverlayPosition;
 
 /// Loại overlay để hiển thị
 #[derive(Debug, Clone, Copy)]
@@ -36,6 +37,7 @@ struct AnimationState {
     active: AtomicBool,
     current_frame: AtomicU32,
     overlay_type: OverlayType,
+    position: OverlayPosition,
 }
 
 /// Global animation state (để window_proc truy cập)
@@ -43,13 +45,19 @@ static mut ANIM_STATE: Option<*const AnimationState> = None;
 
 /// Hiển thị overlay animation
 pub fn show_overlay(overlay_type: OverlayType) -> Result<()> {
-    log::info!("Hiển thị overlay: {:?}", overlay_type);
+    // Đọc vị trí từ config
+    let position = crate::config::load_config()
+        .map(|c| c.overlay_position)
+        .unwrap_or_default();
+
+    log::info!("Hiển thị overlay: {:?} tại {:?}", overlay_type, position);
 
     // Tạo shared state
     let state = Arc::new(AnimationState {
         active: AtomicBool::new(true),
         current_frame: AtomicU32::new(0),
         overlay_type,
+        position,
     });
 
     // Store pointer để window_proc truy cập
@@ -127,12 +135,27 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
 
         // Lấy thông tin màn hình
         let screen_width = GetSystemMetrics(SM_CXSCREEN);
+        let screen_height = GetSystemMetrics(SM_CYSCREEN);
 
-        // Vị trí góc phải trên
+        // Kích thước window
         let window_width = 200;
         let window_height = 200;
-        let x = screen_width - window_width - 20;
-        let y = 20;
+        let margin = 20;
+
+        // Tính vị trí dựa trên position
+        let (x, y) = match state.position {
+            OverlayPosition::TopLeft => (margin, margin),
+            OverlayPosition::TopRight => (screen_width - window_width - margin, margin),
+            OverlayPosition::Center => (
+                (screen_width - window_width) / 2,
+                (screen_height - window_height) / 2,
+            ),
+            OverlayPosition::BottomLeft => (margin, screen_height - window_height - margin - 40), // -40 cho taskbar
+            OverlayPosition::BottomRight => (
+                screen_width - window_width - margin,
+                screen_height - window_height - margin - 40,
+            ),
+        };
 
         // Tạo window
         let hwnd = CreateWindowExW(

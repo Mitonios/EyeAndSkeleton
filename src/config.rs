@@ -3,6 +3,51 @@ use std::fs;
 use std::path::PathBuf;
 use anyhow::{Result, Context};
 
+/// Vị trí hiển thị overlay
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum OverlayPosition {
+    TopLeft,
+    #[default]
+    TopRight,
+    Center,
+    BottomLeft,
+    BottomRight,
+}
+
+impl OverlayPosition {
+    /// Lấy tên hiển thị
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            OverlayPosition::TopLeft => "Trên - Trái",
+            OverlayPosition::TopRight => "Trên - Phải",
+            OverlayPosition::Center => "Giữa màn hình",
+            OverlayPosition::BottomLeft => "Dưới - Trái",
+            OverlayPosition::BottomRight => "Dưới - Phải",
+        }
+    }
+
+    /// Lấy tất cả các vị trí
+    pub fn all() -> &'static [OverlayPosition] {
+        &[
+            OverlayPosition::TopLeft,
+            OverlayPosition::TopRight,
+            OverlayPosition::Center,
+            OverlayPosition::BottomLeft,
+            OverlayPosition::BottomRight,
+        ]
+    }
+
+    /// Lấy index trong danh sách
+    pub fn index(&self) -> usize {
+        Self::all().iter().position(|p| p == self).unwrap_or(1)
+    }
+
+    /// Lấy từ index
+    pub fn from_index(index: usize) -> Self {
+        Self::all().get(index).copied().unwrap_or_default()
+    }
+}
+
 /// Cấu hình ứng dụng Blink Reminder
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -14,6 +59,10 @@ pub struct AppConfig {
 
     /// Khoảng thời gian nhắc đứng dậy (phút)
     pub standup_interval: u32,
+
+    /// Vị trí hiển thị overlay
+    #[serde(default)]
+    pub overlay_position: OverlayPosition,
 }
 
 impl Default for AppConfig {
@@ -22,6 +71,7 @@ impl Default for AppConfig {
             startup: false,
             blink_interval: 5,     // 5 phút mặc định
             standup_interval: 45,  // 45 phút mặc định
+            overlay_position: OverlayPosition::default(),
         }
     }
 }
