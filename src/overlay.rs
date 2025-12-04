@@ -1,7 +1,7 @@
 use crate::config::OverlayPosition;
 use anyhow::Result;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::*;
@@ -42,8 +42,8 @@ struct AnimationState {
     position: OverlayPosition,
 }
 
-/// Global animation state (để window_proc truy cập)
-static mut ANIM_STATE: Option<*const AnimationState> = None;
+/// Global animation state (thread-safe với OnceLock + Mutex)
+static ANIM_STATE: OnceLock<Mutex<Option<Arc<AnimationState>>>> = OnceLock::new();
 
 /// Hiển thị overlay animation
 pub fn show_overlay(overlay_type: OverlayType) -> Result<()> {
@@ -62,9 +62,12 @@ pub fn show_overlay(overlay_type: OverlayType) -> Result<()> {
         position,
     });
 
-    // Store pointer để window_proc truy cập
-    unsafe {
-        ANIM_STATE = Some(Arc::as_ptr(&state));
+    // Store state an toàn với OnceLock + Mutex
+    let _ = ANIM_STATE.get_or_init(|| Mutex::new(None));
+    if let Some(mutex) = ANIM_STATE.get() {
+        if let Ok(mut guard) = mutex.lock() {
+            *guard = Some(state.clone());
+        }
     }
 
     // Clone cho thread
@@ -107,9 +110,11 @@ pub fn show_overlay(overlay_type: OverlayType) -> Result<()> {
     std::thread::sleep(Duration::from_secs(OVERLAY_DURATION_SECS));
     state.active.store(false, Ordering::SeqCst);
 
-    // Clear global pointer
-    unsafe {
-        ANIM_STATE = None;
+    // Clear global state an toàn
+    if let Some(mutex) = ANIM_STATE.get() {
+        if let Ok(mut guard) = mutex.lock() {
+            *guard = None;
+        }
     }
 
     Ok(())

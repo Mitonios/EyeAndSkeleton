@@ -7,13 +7,6 @@ use windows::Win32::System::Registry::*;
 /// Tên key trong registry cho startup
 const REG_KEY_NAME: &str = "BlinkReminder";
 
-/// Đảm bảo registry startup được thiết lập đúng
-pub fn ensure_startup() -> Result<()> {
-    // This function is now implemented in set_startup
-    // It's kept for backward compatibility
-    Ok(())
-}
-
 /// Thiết lập hoặc xóa registry key cho Windows startup
 pub fn set_startup(enable: bool) -> Result<()> {
     let exe_path = get_current_exe_path()?;

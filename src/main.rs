@@ -36,11 +36,6 @@ async fn main() -> Result<()> {
     let config = config::load_config()?;
     let mut config_arc = Arc::new(config);
 
-    // Handle startup registry
-    if config_arc.startup {
-        registry::ensure_startup()?;
-    }
-
     // Setup tray icon and menu
     let (tray_tx, mut tray_rx) = mpsc::channel(32);
     let _tray_manager = tray::init_tray(tray_tx)?; // Giữ alive để tray icon không bị xóa

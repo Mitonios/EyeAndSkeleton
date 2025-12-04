@@ -260,6 +260,7 @@ pub fn start_timers(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::OverlayPosition;
     use std::sync::Arc;
 
     #[tokio::test]
@@ -267,12 +268,13 @@ mod tests {
         let config = Arc::new(AppConfig {
             startup: false,
             blink_interval: 1,
-            standup_interval: 2,
+            standup_interval: 30,
+            overlay_position: OverlayPosition::default(),
         });
 
         let manager = TimerManager::new(config);
         assert_eq!(manager.config.blink_interval, 1);
-        assert_eq!(manager.config.standup_interval, 2);
+        assert_eq!(manager.config.standup_interval, 30);
     }
 
     #[tokio::test]
@@ -280,7 +282,8 @@ mod tests {
         let config1 = Arc::new(AppConfig {
             startup: false,
             blink_interval: 1,
-            standup_interval: 2,
+            standup_interval: 30,
+            overlay_position: OverlayPosition::default(),
         });
 
         let mut manager = TimerManager::new(config1);
@@ -289,6 +292,7 @@ mod tests {
             startup: true,
             blink_interval: 5,
             standup_interval: 30,
+            overlay_position: OverlayPosition::Center,
         });
 
         manager.update_config(config2);
