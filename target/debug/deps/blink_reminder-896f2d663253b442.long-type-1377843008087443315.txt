@@ -1,1 +1,0 @@
-Result<(), windows_core::error::Error>: From<WIN32_ERROR>
