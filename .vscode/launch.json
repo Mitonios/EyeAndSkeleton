@@ -1,0 +1,73 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Blink Reminder",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--bin=blink-reminder", "--package=blink-reminder"],
+        "filter": {
+          "name": "blink-reminder",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RUST_BACKTRACE": "1"
+      },
+      "console": "internalConsole",
+      "preLaunchTask": "rust: cargo build"
+    },
+    {
+      "name": "Debug Blink Reminder (Release)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": [
+          "build",
+          "--release",
+          "--bin=blink-reminder",
+          "--package=blink-reminder"
+        ],
+        "filter": {
+          "name": "blink-reminder",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RUST_BACKTRACE": "1"
+      },
+      "console": "internalConsole",
+      "preLaunchTask": "rust: cargo build (release)"
+    },
+    {
+      "name": "Run Blink Reminder (No Debug)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--bin=blink-reminder", "--package=blink-reminder"],
+        "filter": {
+          "name": "blink-reminder",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RUST_BACKTRACE": "1"
+      },
+      "console": "integratedTerminal",
+      "preLaunchTask": "rust: cargo build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    }
+  ]
+}
