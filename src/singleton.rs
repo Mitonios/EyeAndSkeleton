@@ -38,7 +38,7 @@ impl Drop for SingletonGuard {
 pub fn acquire_singleton() -> anyhow::Result<Option<SingletonGuard>> {
     unsafe {
         // Thử mở mutex đã tồn tại
-        let existing = OpenMutexW(MUTEX_ALL_ACCESS, FALSE, MUTEX_NAME);
+        let existing = OpenMutexW(MUTEX_ALL_ACCESS, false, MUTEX_NAME);
 
         if let Ok(handle) = existing {
             // Mutex đã tồn tại = app đã chạy
@@ -51,7 +51,7 @@ pub fn acquire_singleton() -> anyhow::Result<Option<SingletonGuard>> {
         }
 
         // Tạo mutex mới
-        let handle = CreateMutexW(None, TRUE, MUTEX_NAME)?;
+        let handle = CreateMutexW(None, true, MUTEX_NAME)?;
 
         // Đây là instance đầu tiên
         Ok(Some(SingletonGuard {
@@ -66,14 +66,17 @@ fn signal_existing_instance() {
 
     unsafe {
         // Tìm IPC window của instance đang chạy
-        let hwnd = FindWindowW(IPC_WINDOW_CLASS, PCWSTR::null());
-
-        if hwnd != HWND::default() {
-            // Gửi message để mở Config
-            PostMessageW(hwnd, WM_SHOW_CONFIG, WPARAM(0), LPARAM(0)).ok();
-            log::info!("Đã gửi WM_SHOW_CONFIG đến instance đang chạy");
-        } else {
-            log::warn!("Không tìm thấy IPC window");
+        match FindWindowW(IPC_WINDOW_CLASS, PCWSTR::null()) {
+            Ok(hwnd) if hwnd != HWND::default() => {
+                let _ = PostMessageW(Some(hwnd), WM_SHOW_CONFIG, WPARAM(0), LPARAM(0));
+                log::info!("Đã gửi WM_SHOW_CONFIG đến instance đang chạy");
+            }
+            Ok(_) => {
+                log::warn!("Không tìm thấy IPC window");
+            }
+            Err(err) => {
+                log::warn!("FindWindowW lỗi: {:?}", err);
+            }
         }
     }
 }
@@ -114,23 +117,23 @@ pub fn create_ipc_window(on_show_config: impl Fn() + Send + Sync + 'static) -> a
                 0,
                 1,
                 1,
-                HWND::default(),
-                HMENU::default(),
-                HINSTANCE::default(),
+                Some(HWND::default()),
+                Some(HMENU::default()),
+                Some(HINSTANCE::default()),
                 None,
             );
 
-            if hwnd == HWND::default() {
+            let Ok(_hwnd) = hwnd else {
                 log::error!("Không thể tạo IPC window");
                 return;
-            }
+            };
 
             log::info!("Đã tạo IPC window");
 
             // Message loop
             let mut msg = MSG::default();
-            while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
-                TranslateMessage(&msg);
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
         }

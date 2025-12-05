@@ -175,15 +175,11 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
             y,
             window_width,
             window_height,
-            HWND::default(),
-            HMENU::default(),
-            HINSTANCE::default(),
+            Some(HWND::default()),
+            Some(HMENU::default()),
+            Some(HINSTANCE::default()),
             None,
-        );
-
-        if hwnd == HWND::default() {
-            return Err(anyhow::anyhow!("Không thể tạo overlay window"));
-        }
+        )?;
 
         // Làm window transparent - dùng màu trắng làm color key
         if let Err(e) = SetLayeredWindowAttributes(hwnd, COLORREF(0x00FFFFFF), 0, LWA_COLORKEY) {
@@ -191,14 +187,14 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
         }
 
         // Hiển thị window
-        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        UpdateWindow(hwnd);
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        let _ = UpdateWindow(hwnd);
 
         // Vẽ emoji ban đầu
         draw_emoji(hwnd, state.overlay_type, 0)?;
 
         // Set timer để update animation (100ms)
-        SetTimer(hwnd, 1, 100, None);
+        SetTimer(Some(hwnd), 1, 100, None);
 
         // Message loop với animation
         let mut msg = MSG::default();
@@ -206,11 +202,11 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
 
         while state.active.load(Ordering::SeqCst) {
             // Check for messages với timeout
-            if PeekMessageW(&mut msg, hwnd, 0, 0, PM_REMOVE).as_bool() {
+            if PeekMessageW(&mut msg, Some(hwnd), 0, 0, PM_REMOVE).as_bool() {
                 if msg.message == WM_QUIT {
                     break;
                 }
-                TranslateMessage(&msg);
+                let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
 
@@ -225,9 +221,9 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
         }
 
         // Cleanup
-        let _ = KillTimer(hwnd, 1);
+        let _ = KillTimer(Some(hwnd), 1);
         let _ = DestroyWindow(hwnd);
-        let _ = UnregisterClassW(PCWSTR::from_raw(class_name.as_ptr()), HINSTANCE::default());
+        let _ = UnregisterClassW(PCWSTR::from_raw(class_name.as_ptr()), Some(HINSTANCE::default()));
 
         log::info!("Overlay window closed");
         Ok(())
@@ -237,7 +233,7 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
 /// Vẽ emoji lên window với frame index
 fn draw_emoji(hwnd: HWND, overlay_type: OverlayType, frame_index: u32) -> Result<()> {
     unsafe {
-        let hdc = GetDC(hwnd);
+        let hdc = GetDC(Some(hwnd));
         if hdc.is_invalid() {
             return Err(anyhow::anyhow!("Không thể lấy device context"));
         }
@@ -247,7 +243,7 @@ fn draw_emoji(hwnd: HWND, overlay_type: OverlayType, frame_index: u32) -> Result
         let _ = GetClientRect(hwnd, &mut rect);
         let brush = CreateSolidBrush(COLORREF(0x00FFFFFF)); // White = transparent
         FillRect(hdc, &rect, brush);
-        DeleteObject(brush);
+        let _ = DeleteObject(brush.into());
 
         // Set background mode to transparent for text
         SetBkMode(hdc, TRANSPARENT);
@@ -263,21 +259,21 @@ fn draw_emoji(hwnd: HWND, overlay_type: OverlayType, frame_index: u32) -> Result
             0,
             0,
             0,
-            0,
-            0,
-            0,
-            0,
+            FONT_CHARSET(0),
+            FONT_OUTPUT_PRECISION(0),
+            FONT_CLIP_PRECISION(0),
+            FONT_QUALITY(0),
             0,
             PCWSTR::from_raw(font_name_wide.as_ptr()),
         );
 
         if font.is_invalid() {
-            let _ = ReleaseDC(hwnd, hdc);
+            let _ = ReleaseDC(Some(hwnd), hdc);
             return Err(anyhow::anyhow!("Không thể tạo font"));
         }
 
         // Select font
-        let old_font = SelectObject(hdc, font);
+        let old_font = SelectObject(hdc, font.into());
 
         // Lấy emoji frame
         let frames = get_animation_frames(overlay_type);
@@ -287,12 +283,12 @@ fn draw_emoji(hwnd: HWND, overlay_type: OverlayType, frame_index: u32) -> Result
         let emoji_wide: Vec<u16> = emoji.encode_utf16().collect();
 
         // Vẽ emoji ở center
-        TextOutW(hdc, 40, 40, &emoji_wide);
+        let _ = TextOutW(hdc, 40, 40, &emoji_wide);
 
         // Cleanup
         SelectObject(hdc, old_font);
-        let _ = DeleteObject(font);
-        let _ = ReleaseDC(hwnd, hdc);
+        let _ = DeleteObject(font.into());
+        let _ = ReleaseDC(Some(hwnd), hdc);
 
         Ok(())
     }
@@ -314,7 +310,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_TIMER => {
             // Trigger redraw
-            InvalidateRect(hwnd, None, FALSE);
+            let _ = InvalidateRect(Some(hwnd), None, false);
             LRESULT(0)
         }
         WM_DESTROY => {

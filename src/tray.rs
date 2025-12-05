@@ -22,8 +22,6 @@ const WM_TRAYICON: u32 = WM_USER + 100;
 
 /// Struct để quản lý tray icon
 pub struct TrayManager {
-    #[allow(dead_code)]
-    nid: NOTIFYICONDATAW,
     message_window: HWND,
 }
 
@@ -109,7 +107,7 @@ unsafe fn show_context_menu(hwnd: HWND) {
         TPM_BOTTOMALIGN | TPM_LEFTALIGN,
         point.x,
         point.y,
-        0,
+        Some(0),
         hwnd,
         None,
     );
@@ -158,18 +156,21 @@ impl TrayManager {
                     class_name,
                     w!("BlinkReminderTray"),
                     WS_OVERLAPPED,
-                    0, 0, 1, 1,
-                    HWND::default(),
-                    HMENU::default(),
-                    HINSTANCE::default(),
+                    0,
+                    0,
+                    1,
+                    1,
+                    Some(HWND::default()),
+                    Some(HMENU::default()),
+                    Some(HINSTANCE::default()),
                     None,
                 )
             };
             
-            if message_window == HWND::default() {
+            let Ok(message_window) = message_window else {
                 let _ = result_tx.send(Err(anyhow::anyhow!("Không thể tạo message window")));
                 return;
-            }
+            };
             log::info!("Created message window: {:?}", message_window);
             
             // Setup NOTIFYICONDATAW
@@ -201,16 +202,16 @@ impl TrayManager {
             }
             log::info!("Shell_NotifyIconW succeeded!");
             
-            // Gửi success
-            let _ = result_tx.send(Ok((nid, message_window)));
+            // Gửi success (chỉ gửi handle window để main thread giữ và gửi quit khi drop)
+            let _ = result_tx.send(Ok(message_window.0 as isize));
             
             // Message loop - PHẢI chạy trên thread này
             log::info!("Starting message loop on tray thread");
             unsafe {
                 let mut msg = MSG::default();
-                while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
+                while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                     log::debug!("Message received: msg={}, hwnd={:?}", msg.message, msg.hwnd);
-                    TranslateMessage(&msg);
+                    let _ = TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                 }
             }
@@ -218,16 +219,17 @@ impl TrayManager {
             
             // Cleanup
             unsafe {
-                Shell_NotifyIconW(NIM_DELETE, &nid);
+                let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
                 let _ = DestroyWindow(message_window);
             }
         });
         
         // Đợi kết quả từ tray thread
         match result_rx.recv() {
-            Ok(Ok((nid, message_window))) => {
+            Ok(Ok(message_window_raw)) => {
+                let message_window = HWND(message_window_raw as _);
                 log::info!("Tray icon created successfully");
-                Ok(Self { nid, message_window })
+                Ok(Self { message_window })
             }
             Ok(Err(e)) => Err(e),
             Err(_) => Err(anyhow::anyhow!("Tray thread crashed")),
@@ -242,7 +244,7 @@ impl Drop for TrayManager {
         log::info!("TrayManager dropped - sending quit message");
         unsafe {
             if self.message_window != HWND::default() {
-                PostMessageW(self.message_window, WM_QUIT, WPARAM(0), LPARAM(0)).ok();
+                PostMessageW(Some(self.message_window), WM_QUIT, WPARAM(0), LPARAM(0)).ok();
             }
         }
     }
@@ -259,7 +261,7 @@ fn load_icon() -> HANDLE {
     if let Some(icon_path) = get_icon_path() {
         if let Ok(handle) = unsafe {
             LoadImageW(
-                HINSTANCE::default(),
+                Some(HINSTANCE::default()),
                 PCWSTR::from_raw(icon_path.as_ptr()),
                 IMAGE_ICON,
                 16, 16,
@@ -273,7 +275,7 @@ fn load_icon() -> HANDLE {
     
     // Fallback to system icon
     log::warn!("Using system default icon");
-    let hicon = unsafe { LoadIconW(HINSTANCE::default(), IDI_APPLICATION) };
+    let hicon = unsafe { LoadIconW(Some(HINSTANCE::default()), IDI_APPLICATION) };
     HANDLE(hicon.unwrap_or_default().0)
 }
 

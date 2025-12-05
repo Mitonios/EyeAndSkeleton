@@ -28,19 +28,26 @@ const ID_LABEL_BLINK_COUNTDOWN: i32 = 110;
 const ID_LABEL_STANDUP_COUNTDOWN: i32 = 111;
 const ID_COMBO_POSITION: i32 = 112;
 const ID_LABEL_POSITION: i32 = 113;
+const ID_LABEL_VERSION: i32 = 120;
+const ID_LABEL_AUTHOR: i32 = 121;
 
 /// Timer ID for countdown update
 const TIMER_ID_COUNTDOWN: usize = 1;
+const VK_ESCAPE_KEY: u32 = 0x1B;
 
 /// Blink interval options (phút)
 const BLINK_OPTIONS: [u32; 4] = [1, 5, 10, 30];
 /// Stand-up interval options (phút)
 const STANDUP_OPTIONS: [u32; 3] = [30, 45, 60];
 
+/// Metadata từ Cargo
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const APP_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
+
 /// Global state cho dialog
 static DIALOG_CONFIG: OnceLock<std::sync::Mutex<ConfigDialogState>> = OnceLock::new();
-/// Global HWND để track config window singleton
-static CONFIG_HWND: std::sync::Mutex<Option<HWND>> = std::sync::Mutex::new(None);
+/// Global HWND (raw) để track config window singleton; dùng isize để tránh ràng buộc Send/Sync
+static CONFIG_HWND: std::sync::Mutex<Option<isize>> = std::sync::Mutex::new(None);
 
 struct ConfigDialogState {
     config: AppConfig,
@@ -54,6 +61,84 @@ fn format_countdown(secs: u64) -> String {
     format!("{:02}:{:02}", mins, remaining_secs)
 }
 
+/// Helper: lấy control handle, panic nếu thất bại (UI nội bộ)
+fn dlg_item(hwnd: HWND, id: i32) -> HWND {
+    unsafe { GetDlgItem(Some(hwnd), id).expect("GetDlgItem failed") }
+}
+
+/// Helper: gửi message với WPARAM/LPARAM bắt buộc
+fn send_msg(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    unsafe { SendMessageW(hwnd, msg, Some(wparam), Some(lparam)) }
+}
+
+/// Helper: gửi message không có tham số
+/// Helper: set font cho control
+fn set_font(hwnd: HWND, hfont: HGDIOBJ) {
+    let _ = send_msg(hwnd, WM_SETFONT, WPARAM(hfont.0 as _), LPARAM(1));
+}
+
+/// Helper: set text cho control
+fn set_text(hwnd: HWND, text_wide: &[u16]) {
+    unsafe {
+        let _ = SetWindowTextW(hwnd, PCWSTR::from_raw(text_wide.as_ptr()));
+    }
+}
+
+/// Helper: set/get selection combobox
+fn combo_set_cur_sel(hwnd: HWND, idx: usize) {
+    let _ = send_msg(hwnd, CB_SETCURSEL, WPARAM(idx), LPARAM(0));
+}
+
+fn combo_get_cur_sel(hwnd: HWND) -> usize {
+    send_msg(hwnd, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize
+}
+
+/// Helper: tạo control và unwrap HWND
+fn create_control(
+    ex_style: WINDOW_EX_STYLE,
+    class: PCWSTR,
+    title: PCWSTR,
+    style: WINDOW_STYLE,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    parent: HWND,
+    menu: HMENU,
+    hinstance: HINSTANCE,
+) -> HWND {
+    unsafe {
+        CreateWindowExW(
+            ex_style,
+            class,
+            title,
+            style,
+            x,
+            y,
+            width,
+            height,
+            Some(parent),
+            Some(menu),
+            Some(hinstance),
+            None,
+        )
+        .expect("CreateWindowExW failed")
+    }
+}
+
+/// Helper: timer wrappers
+fn set_timer(hwnd: HWND, id: usize, interval_ms: u32) {
+    unsafe {
+        let _ = SetTimer(Some(hwnd), id, interval_ms, None);
+    }
+}
+
+fn kill_timer(hwnd: HWND, id: usize) {
+    unsafe {
+        let _ = KillTimer(Some(hwnd), id);
+    }
+}
+
 /// Window procedure cho config dialog
 unsafe extern "system" fn config_dialog_proc(
     hwnd: HWND,
@@ -65,17 +150,25 @@ unsafe extern "system" fn config_dialog_proc(
         WM_CREATE => {
             // Lưu HWND vào global để track singleton
             if let Ok(mut guard) = CONFIG_HWND.lock() {
-                *guard = Some(hwnd);
+                *guard = Some(hwnd.0 as isize);
             }
             create_controls(hwnd);
             load_config_to_controls(hwnd);
             // Start countdown timer (1 second interval)
-            SetTimer(hwnd, TIMER_ID_COUNTDOWN, 1000, None);
+            set_timer(hwnd, TIMER_ID_COUNTDOWN, 1000);
             LRESULT(0)
         }
         WM_TIMER => {
             if wparam.0 == TIMER_ID_COUNTDOWN {
                 update_countdown_labels(hwnd);
+            }
+            LRESULT(0)
+        }
+        WM_KEYDOWN => {
+            if wparam.0 as u32 == VK_ESCAPE_KEY {
+                kill_timer(hwnd, TIMER_ID_COUNTDOWN);
+                let _ = DestroyWindow(hwnd);
+                return LRESULT(0);
             }
             LRESULT(0)
         }
@@ -98,7 +191,7 @@ unsafe extern "system" fn config_dialog_proc(
                 }
                 ID_BTN_CLOSE => {
                     log::info!("Close clicked");
-                    let _ = KillTimer(hwnd, TIMER_ID_COUNTDOWN);
+                    kill_timer(hwnd, TIMER_ID_COUNTDOWN);
                     let _ = DestroyWindow(hwnd);
                 }
                 // Tự động lưu khi checkbox thay đổi
@@ -120,7 +213,7 @@ unsafe extern "system" fn config_dialog_proc(
             LRESULT(0)
         }
         WM_CLOSE => {
-            let _ = KillTimer(hwnd, TIMER_ID_COUNTDOWN);
+            kill_timer(hwnd, TIMER_ID_COUNTDOWN);
             let _ = DestroyWindow(hwnd);
             LRESULT(0)
         }
@@ -144,7 +237,7 @@ unsafe fn create_controls(hwnd: HWND) {
     let hfont = GetStockObject(DEFAULT_GUI_FONT);
 
     // Checkbox: Run on startup
-    let checkbox = CreateWindowExW(
+    let checkbox = create_control(
         WINDOW_EX_STYLE(0),
         w!("BUTTON"),
         w!("Chạy khi Windows khởi động"),
@@ -156,13 +249,12 @@ unsafe fn create_controls(hwnd: HWND) {
         hwnd,
         HMENU(ID_CHECKBOX_STARTUP as _),
         hinstance,
-        None,
     );
-    SendMessageW(checkbox, WM_SETFONT, WPARAM(hfont.0 as _), LPARAM(1));
+    set_font(checkbox, hfont);
 
     // === BLINK SECTION ===
-    // Label: Blink interval
-    let label_blink = CreateWindowExW(
+    // Label: Blink interval + countdown + test button trên cùng một dòng
+    let label_blink = create_control(
         WINDOW_EX_STYLE(0),
         w!("STATIC"),
         w!("Nhắc chớp mắt (phút):"),
@@ -170,16 +262,15 @@ unsafe fn create_controls(hwnd: HWND) {
         20,
         60,
         130,
-        20,
+        24,
         hwnd,
         HMENU(ID_LABEL_BLINK as _),
         hinstance,
-        None,
     );
-    SendMessageW(label_blink, WM_SETFONT, WPARAM(hfont.0 as _), LPARAM(1));
+    set_font(label_blink, hfont);
 
     // Combo: Blink interval
-    let combo_blink = CreateWindowExW(
+    let combo_blink = create_control(
         WINDOW_EX_STYLE(0),
         w!("COMBOBOX"),
         PCWSTR::null(),
@@ -191,9 +282,8 @@ unsafe fn create_controls(hwnd: HWND) {
         hwnd,
         HMENU(ID_COMBO_BLINK as _),
         hinstance,
-        None,
     );
-    SendMessageW(combo_blink, WM_SETFONT, WPARAM(hfont.0 as _), LPARAM(1));
+    set_font(combo_blink, hfont);
 
     // Add blink options
     for opt in BLINK_OPTIONS {
@@ -201,39 +291,44 @@ unsafe fn create_controls(hwnd: HWND) {
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        SendMessageW(
-            combo_blink,
-            CB_ADDSTRING,
-            WPARAM(0),
-            LPARAM(text.as_ptr() as _),
-        );
+        send_msg(combo_blink, CB_ADDSTRING, WPARAM(0), LPARAM(text.as_ptr() as _));
     }
 
     // Label: Blink countdown
-    let label_blink_countdown = CreateWindowExW(
+    let label_blink_countdown = create_control(
         WINDOW_EX_STYLE(0),
         w!("STATIC"),
         w!("⏱️ --:--"),
         WS_CHILD | WS_VISIBLE,
         220,
         60,
-        70,
-        20,
+        60,
+        24,
         hwnd,
         HMENU(ID_LABEL_BLINK_COUNTDOWN as _),
         hinstance,
-        None,
     );
-    SendMessageW(
-        label_blink_countdown,
-        WM_SETFONT,
-        WPARAM(hfont.0 as _),
-        LPARAM(1),
+    set_font(label_blink_countdown, hfont);
+
+    // Button: Test Blink (trên cùng dòng)
+    let btn_test_blink = create_control(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        w!("Test"),
+        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON as u32),
+        290,
+        55,
+        50,
+        24,
+        hwnd,
+        HMENU(ID_BTN_TEST_BLINK as _),
+        hinstance,
     );
+    set_font(btn_test_blink, hfont);
 
     // === STANDUP SECTION ===
-    // Label: Stand-up interval
-    let label_standup = CreateWindowExW(
+    // Label: Stand-up interval + countdown + test button
+    let label_standup = create_control(
         WINDOW_EX_STYLE(0),
         w!("STATIC"),
         w!("Nhắc đứng dậy (phút):"),
@@ -241,16 +336,15 @@ unsafe fn create_controls(hwnd: HWND) {
         20,
         95,
         130,
-        20,
+        24,
         hwnd,
         HMENU(ID_LABEL_STANDUP as _),
         hinstance,
-        None,
     );
-    SendMessageW(label_standup, WM_SETFONT, WPARAM(hfont.0 as _), LPARAM(1));
+    set_font(label_standup, hfont);
 
     // Combo: Stand-up interval
-    let combo_standup = CreateWindowExW(
+    let combo_standup = create_control(
         WINDOW_EX_STYLE(0),
         w!("COMBOBOX"),
         PCWSTR::null(),
@@ -262,9 +356,8 @@ unsafe fn create_controls(hwnd: HWND) {
         hwnd,
         HMENU(ID_COMBO_STANDUP as _),
         hinstance,
-        None,
     );
-    SendMessageW(combo_standup, WM_SETFONT, WPARAM(hfont.0 as _), LPARAM(1));
+    set_font(combo_standup, hfont);
 
     // Add stand-up options
     for opt in STANDUP_OPTIONS {
@@ -272,39 +365,44 @@ unsafe fn create_controls(hwnd: HWND) {
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        SendMessageW(
-            combo_standup,
-            CB_ADDSTRING,
-            WPARAM(0),
-            LPARAM(text.as_ptr() as _),
-        );
+        send_msg(combo_standup, CB_ADDSTRING, WPARAM(0), LPARAM(text.as_ptr() as _));
     }
 
     // Label: Standup countdown
-    let label_standup_countdown = CreateWindowExW(
+    let label_standup_countdown = create_control(
         WINDOW_EX_STYLE(0),
         w!("STATIC"),
         w!("⏱️ --:--"),
         WS_CHILD | WS_VISIBLE,
         220,
         95,
-        70,
-        20,
+        60,
+        24,
         hwnd,
         HMENU(ID_LABEL_STANDUP_COUNTDOWN as _),
         hinstance,
-        None,
     );
-    SendMessageW(
-        label_standup_countdown,
-        WM_SETFONT,
-        WPARAM(hfont.0 as _),
-        LPARAM(1),
+    set_font(label_standup_countdown, hfont);
+
+    // Button: Test Stand Up (trên cùng dòng)
+    let btn_test_standup = create_control(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        w!("Test"),
+        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON as u32),
+        290,
+        90,
+        50,
+        24,
+        hwnd,
+        HMENU(ID_BTN_TEST_STANDUP as _),
+        hinstance,
     );
+    set_font(btn_test_standup, hfont);
 
     // === POSITION SECTION ===
     // Label: Position
-    let label_position = CreateWindowExW(
+    let label_position = create_control(
         WINDOW_EX_STYLE(0),
         w!("STATIC"),
         w!("Vị trí thông báo:"),
@@ -316,12 +414,11 @@ unsafe fn create_controls(hwnd: HWND) {
         hwnd,
         HMENU(ID_LABEL_POSITION as _),
         hinstance,
-        None,
     );
-    SendMessageW(label_position, WM_SETFONT, WPARAM(hfont.0 as _), LPARAM(1));
+    set_font(label_position, hfont);
 
     // Combo: Position
-    let combo_position = CreateWindowExW(
+    let combo_position = create_control(
         WINDOW_EX_STYLE(0),
         w!("COMBOBOX"),
         PCWSTR::null(),
@@ -333,9 +430,8 @@ unsafe fn create_controls(hwnd: HWND) {
         hwnd,
         HMENU(ID_COMBO_POSITION as _),
         hinstance,
-        None,
     );
-    SendMessageW(combo_position, WM_SETFONT, WPARAM(hfont.0 as _), LPARAM(1));
+    set_font(combo_position, hfont);
 
     // Add position options
     for pos in crate::config::OverlayPosition::all() {
@@ -344,70 +440,50 @@ unsafe fn create_controls(hwnd: HWND) {
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        SendMessageW(
-            combo_position,
-            CB_ADDSTRING,
-            WPARAM(0),
-            LPARAM(text.as_ptr() as _),
-        );
+        send_msg(combo_position, CB_ADDSTRING, WPARAM(0), LPARAM(text.as_ptr() as _));
     }
 
     // === BUTTONS ===
-    // Button: Test Blink
-    let btn_test_blink = CreateWindowExW(
+    // Version & author labels
+    let version_label = create_control(
         WINDOW_EX_STYLE(0),
-        w!("BUTTON"),
-        w!("Test Chớp mắt"),
-        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON as u32),
+        w!("STATIC"),
+        PCWSTR::null(),
+        WS_CHILD | WS_VISIBLE,
         20,
-        170,
-        120,
-        30,
+        160,
+        270,
+        18,
         hwnd,
-        HMENU(ID_BTN_TEST_BLINK as _),
+        HMENU(ID_LABEL_VERSION as _),
         hinstance,
-        None,
     );
-    SendMessageW(btn_test_blink, WM_SETFONT, WPARAM(hfont.0 as _), LPARAM(1));
+    let version_text: Vec<u16> = format!("Phiên bản: {}", APP_VERSION)
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    set_text(version_label, &version_text);
+    set_font(version_label, hfont);
 
-    // Button: Test Stand Up
-    let btn_test_standup = CreateWindowExW(
+    let author_label = create_control(
         WINDOW_EX_STYLE(0),
-        w!("BUTTON"),
-        w!("Test Đứng dậy"),
-        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON as u32),
-        150,
-        170,
-        120,
-        30,
+        w!("STATIC"),
+        PCWSTR::null(),
+        WS_CHILD | WS_VISIBLE,
+        20,
+        180,
+        270,
+        18,
         hwnd,
-        HMENU(ID_BTN_TEST_STANDUP as _),
+        HMENU(ID_LABEL_AUTHOR as _),
         hinstance,
-        None,
     );
-    SendMessageW(
-        btn_test_standup,
-        WM_SETFONT,
-        WPARAM(hfont.0 as _),
-        LPARAM(1),
-    );
-
-    // Button: Close
-    let btn_close = CreateWindowExW(
-        WINDOW_EX_STYLE(0),
-        w!("BUTTON"),
-        w!("Đóng"),
-        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON as u32),
-        110,
-        220,
-        80,
-        30,
-        hwnd,
-        HMENU(ID_BTN_CLOSE as _),
-        hinstance,
-        None,
-    );
-    SendMessageW(btn_close, WM_SETFONT, WPARAM(hfont.0 as _), LPARAM(1));
+    let author_text: Vec<u16> = format!("Tác giả: {}", APP_AUTHORS)
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    set_text(author_label, &author_text);
+    set_font(author_label, hfont);
 }
 
 /// Update countdown labels
@@ -420,8 +496,8 @@ unsafe fn update_countdown_labels(hwnd: HWND) {
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        let blink_label = GetDlgItem(hwnd, ID_LABEL_BLINK_COUNTDOWN);
-        let _ = SetWindowTextW(blink_label, PCWSTR::from_raw(blink_wide.as_ptr()));
+        let blink_label = dlg_item(hwnd, ID_LABEL_BLINK_COUNTDOWN);
+        set_text(blink_label, &blink_wide);
 
         // Update standup countdown
         let standup_secs = info.standup_remaining_secs();
@@ -430,8 +506,8 @@ unsafe fn update_countdown_labels(hwnd: HWND) {
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        let standup_label = GetDlgItem(hwnd, ID_LABEL_STANDUP_COUNTDOWN);
-        let _ = SetWindowTextW(standup_label, PCWSTR::from_raw(standup_wide.as_ptr()));
+        let standup_label = dlg_item(hwnd, ID_LABEL_STANDUP_COUNTDOWN);
+        set_text(standup_label, &standup_wide);
     }
 }
 
@@ -442,43 +518,34 @@ unsafe fn load_config_to_controls(hwnd: HWND) {
         let config = &state.config;
 
         // Checkbox startup
-        let checkbox = GetDlgItem(hwnd, ID_CHECKBOX_STARTUP);
-        SendMessageW(
-            checkbox,
-            BM_SETCHECK,
-            WPARAM(if config.startup {
-                BST_CHECKED.0 as _
-            } else {
-                BST_UNCHECKED.0 as _
-            }),
-            LPARAM(0),
-        );
+        let checkbox = dlg_item(hwnd, ID_CHECKBOX_STARTUP);
+        let flag = if config.startup {
+            BST_CHECKED.0 as _
+        } else {
+            BST_UNCHECKED.0 as _
+        };
+        send_msg(checkbox, BM_SETCHECK, WPARAM(flag), LPARAM(0));
 
         // Combo blink interval
-        let combo_blink = GetDlgItem(hwnd, ID_COMBO_BLINK);
+        let combo_blink = dlg_item(hwnd, ID_COMBO_BLINK);
         let blink_idx = BLINK_OPTIONS
             .iter()
             .position(|&x| x == config.blink_interval)
             .unwrap_or(1);
-        SendMessageW(combo_blink, CB_SETCURSEL, WPARAM(blink_idx), LPARAM(0));
+        combo_set_cur_sel(combo_blink, blink_idx);
 
         // Combo stand-up interval
-        let combo_standup = GetDlgItem(hwnd, ID_COMBO_STANDUP);
+        let combo_standup = dlg_item(hwnd, ID_COMBO_STANDUP);
         let standup_idx = STANDUP_OPTIONS
             .iter()
             .position(|&x| x == config.standup_interval)
             .unwrap_or(1);
-        SendMessageW(combo_standup, CB_SETCURSEL, WPARAM(standup_idx), LPARAM(0));
+        combo_set_cur_sel(combo_standup, standup_idx);
 
         // Combo position
-        let combo_position = GetDlgItem(hwnd, ID_COMBO_POSITION);
+        let combo_position = dlg_item(hwnd, ID_COMBO_POSITION);
         let position_idx = config.overlay_position.index();
-        SendMessageW(
-            combo_position,
-            CB_SETCURSEL,
-            WPARAM(position_idx),
-            LPARAM(0),
-        );
+        combo_set_cur_sel(combo_position, position_idx);
     }
 
     // Initial countdown update
@@ -488,20 +555,19 @@ unsafe fn load_config_to_controls(hwnd: HWND) {
 /// Đọc config từ controls
 unsafe fn read_config_from_controls(hwnd: HWND) -> AppConfig {
     // Đọc values từ controls
-    let checkbox = GetDlgItem(hwnd, ID_CHECKBOX_STARTUP);
-    let startup =
-        SendMessageW(checkbox, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 == BST_CHECKED.0 as isize;
+    let checkbox = dlg_item(hwnd, ID_CHECKBOX_STARTUP);
+    let startup = send_msg(checkbox, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 == BST_CHECKED.0 as isize;
 
-    let combo_blink = GetDlgItem(hwnd, ID_COMBO_BLINK);
-    let blink_idx = SendMessageW(combo_blink, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize;
+    let combo_blink = dlg_item(hwnd, ID_COMBO_BLINK);
+    let blink_idx = combo_get_cur_sel(combo_blink);
     let blink_interval = BLINK_OPTIONS.get(blink_idx).copied().unwrap_or(5);
 
-    let combo_standup = GetDlgItem(hwnd, ID_COMBO_STANDUP);
-    let standup_idx = SendMessageW(combo_standup, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize;
+    let combo_standup = dlg_item(hwnd, ID_COMBO_STANDUP);
+    let standup_idx = combo_get_cur_sel(combo_standup);
     let standup_interval = STANDUP_OPTIONS.get(standup_idx).copied().unwrap_or(45);
 
-    let combo_position = GetDlgItem(hwnd, ID_COMBO_POSITION);
-    let position_idx = SendMessageW(combo_position, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 as usize;
+    let combo_position = dlg_item(hwnd, ID_COMBO_POSITION);
+    let position_idx = combo_get_cur_sel(combo_position);
     let overlay_position = crate::config::OverlayPosition::from_index(position_idx);
 
     AppConfig {
@@ -547,11 +613,12 @@ pub fn show_config_dialog(config: Arc<AppConfig>, config_tx: Option<mpsc::Sender
     // Kiểm tra xem đã có config window đang mở chưa
     if let Ok(guard) = CONFIG_HWND.lock() {
         if let Some(existing_hwnd) = *guard {
+            let existing_hwnd = HWND(existing_hwnd as _);
             // Đã có window, đưa lên foreground
             unsafe {
-                if IsWindow(existing_hwnd).as_bool() {
+                if IsWindow(Some(existing_hwnd)).as_bool() {
                     log::info!("Config window đã mở, đưa lên foreground");
-                    ShowWindow(existing_hwnd, SW_RESTORE);
+                    let _ = ShowWindow(existing_hwnd, SW_RESTORE);
                     let _ = SetForegroundWindow(existing_hwnd);
                     return;
                 }
@@ -577,7 +644,7 @@ pub fn show_config_dialog(config: Arc<AppConfig>, config_tx: Option<mpsc::Sender
                 cbWndExtra: 0,
                 hInstance: HINSTANCE::default(),
                 hIcon: HICON::default(),
-                hCursor: LoadCursorW(HINSTANCE::default(), IDC_ARROW).unwrap_or_default(),
+                hCursor: LoadCursorW(Some(HINSTANCE::default()), IDC_ARROW).unwrap_or_default(),
                 hbrBackground: HBRUSH((COLOR_BTNFACE.0 + 1) as _),
                 lpszMenuName: PCWSTR::null(),
                 lpszClassName: class_name,
@@ -588,8 +655,8 @@ pub fn show_config_dialog(config: Arc<AppConfig>, config_tx: Option<mpsc::Sender
             // Tính vị trí center screen
             let screen_width = GetSystemMetrics(SM_CXSCREEN);
             let screen_height = GetSystemMetrics(SM_CYSCREEN);
-            let dialog_width = 310;
-            let dialog_height = 310;
+            let dialog_width = 360;
+            let dialog_height = 250; // vừa đủ cho controls + metadata
             let x = (screen_width - dialog_width) / 2;
             let y = (screen_height - dialog_height) / 2;
 
@@ -603,26 +670,26 @@ pub fn show_config_dialog(config: Arc<AppConfig>, config_tx: Option<mpsc::Sender
                 y,
                 dialog_width,
                 dialog_height,
-                HWND::default(),
-                HMENU::default(),
-                HINSTANCE::default(),
+                Some(HWND::default()),
+                Some(HMENU::default()),
+                Some(HINSTANCE::default()),
                 None,
             );
 
-            if hwnd == HWND::default() {
+            let Ok(hwnd) = hwnd else {
                 log::error!("Failed to create config dialog");
                 return;
-            }
+            };
 
             // Show window
-            ShowWindow(hwnd, SW_SHOW);
-            UpdateWindow(hwnd);
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            let _ = UpdateWindow(hwnd);
 
             // Message loop
             let mut msg = MSG::default();
-            while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                 if !IsDialogMessageW(hwnd, &msg).as_bool() {
-                    TranslateMessage(&msg);
+                    let _ = TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                 }
             }

@@ -10,3 +10,6 @@ src\timer.rs:
 src\tray.rs:
 src\config_window.rs:
 src\singleton.rs:
+
+# env-dep:CARGO_PKG_AUTHORS=Mitonios with AI
+# env-dep:CARGO_PKG_VERSION=1.0.0

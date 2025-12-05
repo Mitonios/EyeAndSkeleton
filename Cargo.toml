@@ -1,6 +1,6 @@
 [package]
 name = "blink-reminder"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 description = "Ứng dụng nhắc nhở chớp mắt và đứng dậy cho Windows"
 authors = ["Mitonios with AI"]
@@ -11,7 +11,7 @@ winres = "0.1"
 
 [dependencies]
 # Win32 APIs cho overlay, registry, tray, dialog
-windows = { version = "0.52", features = [
+windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Shell",
@@ -32,9 +32,9 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # App data paths
-directories = "5.0"
+directories = "6.0.0"
 
 # Error handling & logging
 anyhow = "1.0"
 log = "0.4"
-env_logger = "0.10"
+env_logger = "0.11.8"
