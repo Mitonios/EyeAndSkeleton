@@ -1,9 +1,9 @@
 [package]
 name = "blink-reminder"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Ứng dụng nhắc nhở chớp mắt và đứng dậy cho Windows"
-authors = ["Your Name"]
+authors = ["Mitonios with AI"]
 license = "MIT"
 
 [build-dependencies]

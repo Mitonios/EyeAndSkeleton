@@ -22,7 +22,7 @@
 - **Nhắc nhở chớp mắt**: Animation nhắc nhở theo chu kỳ 1/5/10/30 phút
 - **Nhắc nhở đứng dậy**: Animation nhắc nhở đứng dậy theo chu kỳ 30/45/60 phút
 - **Vị trí tùy chọn**: Chọn vị trí hiển thị overlay (góc trên/dưới, trái/phải, giữa màn hình)
-- **Overlay animation**: Emoji động hiển thị trong 5 giây, luôn ở trên cùng
+- **Overlay animation**: Emoji động hiển thị trong 5 giây, luôn ở trên cùng, bán trong suốt (không che phủ toàn màn hình)
 - **Tự động lưu**: Thay đổi cấu hình được lưu ngay lập tức
 - **Khởi động tự động**: Tùy chọn chạy cùng Windows
 - **Xử lý trùng lặp**: Khi thời gian nhắc đứng dậy trùng chớp mắt, ưu tiên hiển thị nhắc đứng dậy
@@ -43,13 +43,13 @@ git clone https://github.com/your-username/blink-reminder.git
 cd blink-reminder
 ```
 
-### Build ứng dụng
+### Build ứng dụng (phát hành exe, không dùng installer)
 
 ```bash
 cargo build --release
 ```
 
-File executable sẽ được tạo tại `target/release/blink-reminder.exe`
+File executable nằm tại `target/release/blink-reminder.exe` (kèm `icon.ico` cùng thư mục nếu cần).
 
 ### Chạy ứng dụng
 
@@ -163,6 +163,22 @@ blink-reminder/
 Dự án này được phân phối dưới giấy phép MIT. Xem file `LICENSE` để biết thêm chi tiết.
 
 ## 🔧 Khắc phục sự cố
+
+## 🔒 Ký mã số & phát hành sạch
+
+- Build release: `cargo build --release` (không dùng packer/obfuscation/UPX).
+- Ký file exe: `signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a target\\release\\blink-reminder.exe`
+- Kiểm tra chữ ký: `signtool verify /pa target\\release\\blink-reminder.exe`
+- Metadata nhúng: icon + thông tin phiên bản được thiết lập trong `build.rs`.
+- Phân phối: chỉ cần phát hành file `blink-reminder.exe` đã ký (không dùng installer).
+
+## 🧪 Kiểm thử & quét AV
+
+1. Quét nội bộ với Windows Defender (Full scan hoặc quét file `.exe`).
+2. Gửi mẫu đã ký lên VirusTotal để xem vendor nào gắn cờ.
+3. Nếu bị false-positive: gửi mẫu đã ký + mô tả hành vi (tray, overlay, ghi Run key tùy chọn) tới các vendor đó để gỡ cờ.
+
+## 🤔 Khắc phục sự cố
 
 ### Windows Defender cảnh báo
 
