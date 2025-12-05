@@ -1,7 +1,8 @@
 # Rust build artifacts
 target/
+/target
 Cargo.lock
-
+/Cargo.lock
 # IDE files
 .idea/
 *.swp
@@ -63,7 +64,4 @@ book/
 criterion/
 
 # Development notes and temporary files
-TODO.md
-NOTES.md
 temp/
-target/
