@@ -226,36 +226,6 @@ impl TimerManager {
     }
 }
 
-/// Handle cho việc update config của timer manager
-#[derive(Clone)]
-pub struct TimerHandle {
-    update_tx: mpsc::Sender<Arc<AppConfig>>,
-}
-
-impl TimerHandle {
-    /// Cập nhật config cho timer manager
-    pub async fn update_config(&self, config: Arc<AppConfig>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.update_tx.send(config).await?;
-        Ok(())
-    }
-}
-
-/// Khởi động timers trong background task và trả về handle để update config
-pub fn start_timers(
-    config: Arc<AppConfig>,
-    tx: mpsc::Sender<TimerEvent>,
-) -> anyhow::Result<TimerHandle> {
-    let timer_manager = TimerManager::new(config);
-    let (update_tx, update_rx) = mpsc::channel(32);
-
-    tokio::spawn(async move {
-        if let Err(e) = timer_manager.run_with_updates(tx, update_rx).await {
-            log::error!("Timer manager gặp lỗi: {}", e);
-        }
-    });
-
-    Ok(TimerHandle { update_tx })
-}
 
 #[cfg(test)]
 mod tests {
@@ -266,7 +236,6 @@ mod tests {
     #[tokio::test]
     async fn test_timer_creation() {
         let config = Arc::new(AppConfig {
-            startup: false,
             blink_interval: 1,
             standup_interval: 30,
             overlay_position: OverlayPosition::default(),
@@ -280,7 +249,6 @@ mod tests {
     #[tokio::test]
     async fn test_config_update() {
         let config1 = Arc::new(AppConfig {
-            startup: false,
             blink_interval: 1,
             standup_interval: 30,
             overlay_position: OverlayPosition::default(),
@@ -289,7 +257,6 @@ mod tests {
         let mut manager = TimerManager::new(config1);
 
         let config2 = Arc::new(AppConfig {
-            startup: true,
             blink_interval: 5,
             standup_interval: 30,
             overlay_position: OverlayPosition::Center,

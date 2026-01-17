@@ -7,6 +7,7 @@ fn main() {
         // Embed icon vào executable
         let mut res = winres::WindowsResource::new();
         res.set_icon("icon.ico");
+        res.set_manifest_file("app.manifest");
         res.set("ProductName", "Blink Reminder");
         res.set("FileDescription", "Ứng dụng nhắc nhở chớp mắt và đứng dậy");
         res.set("CompanyName", "Mitonios with AI");

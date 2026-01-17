@@ -51,9 +51,6 @@ impl OverlayPosition {
 /// Cấu hình ứng dụng Blink Reminder
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
-    /// Có chạy cùng Windows không
-    pub startup: bool,
-
     /// Khoảng thời gian nhắc chớp mắt (phút)
     pub blink_interval: u32,
 
@@ -68,7 +65,6 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            startup: false,
             blink_interval: 5,     // 5 phút mặc định
             standup_interval: 45,  // 45 phút mặc định
             overlay_position: OverlayPosition::default(),
@@ -158,7 +154,6 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = AppConfig::default();
-        assert!(!config.startup);
         assert_eq!(config.blink_interval, 5);
         assert_eq!(config.standup_interval, 45);
     }

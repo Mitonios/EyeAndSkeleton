@@ -3,19 +3,17 @@
 
 use anyhow::Result;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc as tokio_mpsc;
 use crate::config::AppConfig;
 
 mod config;
-mod registry;
 mod overlay;
 mod timer;
 mod tray;
 mod config_window;
 mod singleton;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     // Initialize logging
     env_logger::init();
 
@@ -25,7 +23,6 @@ async fn main() -> Result<()> {
     let _singleton_guard = match singleton::acquire_singleton()? {
         Some(guard) => guard,
         None => {
-            // Đã có instance đang chạy, signal đã được gửi
             log::info!("Đã có instance đang chạy, thoát...");
             return Ok(());
         }
@@ -34,109 +31,112 @@ async fn main() -> Result<()> {
 
     // Load configuration
     let config = config::load_config()?;
-    let mut config_arc = Arc::new(config);
+    let config_arc = Arc::new(config.clone());
 
-    // Setup tray icon and menu
-    let (tray_tx, mut tray_rx) = mpsc::channel(32);
-    let _tray_manager = tray::init_tray(tray_tx)?; // Giữ alive để tray icon không bị xóa
+    // === KHỞI TẠO TRAY TRƯỚC (sử dụng std::sync::mpsc) ===
+    let tray_rx = tray::init_tray()?;
 
-    // Setup timers
-    let (timer_tx, mut timer_rx) = mpsc::channel(32);
-    let timer_handle = timer::start_timers(config_arc.clone(), timer_tx)?;
+    // === KHỞI TẠO TOKIO RUNTIME ===
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
 
-    // Channel for config updates from config window
-    let (config_update_tx, mut config_update_rx) = mpsc::channel::<Arc<AppConfig>>(32);
+    // Channels cho timer
+    let (timer_event_tx, mut timer_event_rx) = tokio_mpsc::channel(32);
+    let (timer_update_tx, timer_update_rx) = tokio_mpsc::channel::<Arc<AppConfig>>(32);
 
-    // Tạo channel cho IPC (singleton signal)
-    let (ipc_tx, mut ipc_rx) = mpsc::channel::<()>(32);
-    
-    // Tạo IPC window để nhận signal từ instances khác
+    // Channel cho UI messages (từ tray đến egui) - dùng std channel vì egui chạy ngoài tokio
+    let (ui_tx, ui_rx) = std::sync::mpsc::channel::<config_window::UiMessage>();
+
+    // Channel cho IPC
+    let (ipc_tx, mut ipc_rx) = tokio_mpsc::channel::<()>(32);
+
+    // Tạo IPC window
     let ipc_tx_clone = ipc_tx.clone();
     singleton::create_ipc_window(move || {
         let _ = ipc_tx_clone.try_send(());
     })?;
 
-    // Mở Config window khi khởi động
-    log::info!("Mở Config window khi khởi động");
-    config_window::show_config_dialog(
-        config_arc.clone(),
-        Some(config_update_tx.clone()),
-    );
+    // === SPAWN BACKGROUND TASKS ===
+    // Clone ui_tx cho IPC handler (std::sync::mpsc::Sender)
+    let ui_tx_for_ipc = ui_tx.clone();
+    let config_for_timer = config_arc.clone();
 
-    // Main event loop
-    loop {
-        tokio::select! {
-            // Handle IPC signal (từ instance khác)
-            Some(_) = ipc_rx.recv() => {
-                log::info!("Nhận signal từ instance khác, mở Config window");
-                config_window::show_config_dialog(
-                    config_arc.clone(),
-                    Some(config_update_tx.clone()),
-                );
+    runtime.spawn(async move {
+        // Khởi tạo timer manager
+        let timer_manager = timer::TimerManager::new(config_for_timer);
+
+        tokio::spawn(async move {
+            if let Err(e) = timer_manager.run_with_updates(timer_event_tx, timer_update_rx).await {
+                log::error!("Timer manager error: {}", e);
             }
+        });
 
-            // Handle config updates
-            Some(new_config) = config_update_rx.recv() => {
-                log::info!("Nhận config update từ config window");
-                // Update registry if startup setting changed
-                if new_config.startup != config_arc.startup {
-                    match registry::set_startup(new_config.startup) {
-                        Ok(_) => log::info!("Đã cập nhật registry startup"),
-                        Err(e) => {
-                            log::error!("Lỗi khi cập nhật registry startup: {}", e);
-                            // Continue anyway - registry failure shouldn't crash the app
+        // Main event loop - xử lý timer events và IPC
+        loop {
+            tokio::select! {
+                Some(_) = ipc_rx.recv() => {
+                    log::info!("IPC: Received signal from another instance");
+                    // std::sync::mpsc::Sender::send() - không có await
+                    let _ = ui_tx_for_ipc.send(config_window::UiMessage::ShowConfig);
+                }
+
+                Some(event) = timer_event_rx.recv() => {
+                    match event {
+                        timer::TimerEvent::ShowBlink => {
+                            log::info!("Timer: Show blink overlay");
+                            std::thread::spawn(|| {
+                                if let Err(e) = overlay::show_overlay(overlay::OverlayType::Blink) {
+                                    log::error!("Failed to show blink overlay: {}", e);
+                                }
+                            });
                         }
-                    }
-                }
-                // Update timer config
-                match timer_handle.update_config(new_config.clone()).await {
-                    Ok(_) => log::info!("Đã cập nhật timer config"),
-                    Err(e) => {
-                        log::error!("Lỗi khi cập nhật timer config: {}", e);
-                        // Continue anyway - timer update failure shouldn't crash the app
-                    }
-                }
-                // Update shared config
-                config_arc = new_config;
-            }
-
-            // Handle tray events
-            Some(event) = tray_rx.recv() => {
-                match event {
-                    tray::TrayEvent::ShowConfig => {
-                        log::info!("Mở Config window");
-                        config_window::show_config_dialog(
-                            config_arc.clone(),
-                            Some(config_update_tx.clone()),
-                        );
-                    }
-                    tray::TrayEvent::Exit => {
-                        log::info!("Nhận lệnh exit từ tray menu");
-                        break;
-                    }
-                }
-            }
-
-            // Handle timer events
-            Some(event) = timer_rx.recv() => {
-                match event {
-                    timer::TimerEvent::ShowBlink => {
-                        log::info!("Hiển thị overlay chớp mắt");
-                        match overlay::show_overlay(overlay::OverlayType::Blink) {
-                            Ok(_) => log::debug!("Overlay blink hiển thị thành công"),
-                            Err(e) => log::error!("Lỗi khi hiển thị overlay blink: {}", e),
-                        }
-                    }
-                    timer::TimerEvent::ShowStandUp => {
-                        log::info!("Hiển thị overlay đứng dậy");
-                        match overlay::show_overlay(overlay::OverlayType::StandUp) {
-                            Ok(_) => log::debug!("Overlay stand-up hiển thị thành công"),
-                            Err(e) => log::error!("Lỗi khi hiển thị overlay stand-up: {}", e),
+                        timer::TimerEvent::ShowStandUp => {
+                            log::info!("Timer: Show stand up overlay");
+                            std::thread::spawn(|| {
+                                if let Err(e) = overlay::show_overlay(overlay::OverlayType::StandUp) {
+                                    log::error!("Failed to show stand up overlay: {}", e);
+                                }
+                            });
                         }
                     }
                 }
             }
         }
+    });
+
+    // === SPAWN TRAY EVENT HANDLER ===
+    // Tray sử dụng std::sync::mpsc, cần thread riêng để poll và forward đến UI
+    std::thread::spawn(move || {
+        log::info!("Tray event handler started");
+        loop {
+            match tray_rx.recv() {
+                Ok(event) => {
+                    log::info!("Tray event received: {:?}", event);
+                    let msg = match event {
+                        tray::TrayEvent::ShowConfig => config_window::UiMessage::ShowConfig,
+                        tray::TrayEvent::Exit => config_window::UiMessage::Exit,
+                    };
+                    // Dùng std::sync::mpsc::Sender::send()
+                    if ui_tx.send(msg).is_err() {
+                        log::error!("Failed to send UI message from tray");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::error!("Tray channel error: {}", e);
+                    break;
+                }
+            }
+        }
+        log::info!("Tray event handler ended");
+    });
+
+    log::info!("Background tasks started, launching UI on main thread");
+
+    // === CHẠY EGUI TRÊN MAIN THREAD ===
+    if let Err(e) = config_window::run_config_window(config, Some(timer_update_tx), Some(ui_rx)) {
+        log::error!("eframe error: {}", e);
     }
 
     // Cleanup

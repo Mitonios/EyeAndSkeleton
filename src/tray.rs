@@ -1,4 +1,8 @@
-use tokio::sync::mpsc;
+//! System Tray Icon cho Blink Reminder
+//!
+//! Sử dụng std::sync::mpsc để giao tiếp với main thread.
+
+use std::sync::mpsc;
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::Win32::Graphics::Gdi::*;
@@ -8,7 +12,7 @@ use std::sync::OnceLock;
 use anyhow::Result;
 
 /// Events sent from tray to main thread
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TrayEvent {
     ShowConfig,
     Exit,
@@ -20,11 +24,6 @@ static TRAY_SENDER: OnceLock<mpsc::Sender<TrayEvent>> = OnceLock::new();
 /// Custom window message for tray icon
 const WM_TRAYICON: u32 = WM_USER + 100;
 
-/// Struct để quản lý tray icon
-pub struct TrayManager {
-    message_window: HWND,
-}
-
 /// Window procedure để handle tray messages
 unsafe extern "system" fn tray_wnd_proc(
     hwnd: HWND,
@@ -35,18 +34,18 @@ unsafe extern "system" fn tray_wnd_proc(
     match msg {
         WM_TRAYICON => {
             let mouse_msg = lparam.0 as u32;
-            log::info!("WM_TRAYICON received: mouse_msg=0x{:X}", mouse_msg);
-            
+
             match mouse_msg {
                 WM_RBUTTONUP | WM_CONTEXTMENU => {
-                    log::info!("Right-click detected, showing context menu");
+                    log::info!("Tray: Right-click detected, showing context menu");
                     show_context_menu(hwnd);
                 }
                 WM_LBUTTONUP => {
-                    log::info!("Left-click detected, opening config window");
-                    // Gửi event để mở Config window
+                    log::info!("Tray: Left-click detected");
                     if let Some(tx) = TRAY_SENDER.get() {
-                        let _ = tx.try_send(TrayEvent::ShowConfig);
+                        if let Err(e) = tx.send(TrayEvent::ShowConfig) {
+                            log::error!("Failed to send ShowConfig event: {}", e);
+                        }
                     }
                 }
                 _ => {}
@@ -55,20 +54,23 @@ unsafe extern "system" fn tray_wnd_proc(
         }
         WM_COMMAND => {
             let menu_id = (wparam.0 & 0xFFFF) as u32;
-            log::info!("WM_COMMAND received: menu_id={}", menu_id);
-            
+            log::info!("Tray: WM_COMMAND received, menu_id={}", menu_id);
+
             if let Some(tx) = TRAY_SENDER.get() {
-                match menu_id {
-                    1 => {
-                        log::info!("Config menu selected");
-                        let _ = tx.try_send(TrayEvent::ShowConfig);
+                let event = match menu_id {
+                    1 => Some(TrayEvent::ShowConfig),
+                    2 => Some(TrayEvent::Exit),
+                    _ => None,
+                };
+
+                if let Some(event) = event {
+                    log::info!("Tray: Sending event {:?}", event);
+                    if let Err(e) = tx.send(event) {
+                        log::error!("Failed to send tray event: {}", e);
                     }
-                    2 => {
-                        log::info!("Exit menu selected");
-                        let _ = tx.try_send(TrayEvent::Exit);
-                    }
-                    _ => {}
                 }
+            } else {
+                log::error!("TRAY_SENDER not initialized!");
             }
             LRESULT(0)
         }
@@ -80,28 +82,23 @@ unsafe extern "system" fn tray_wnd_proc(
     }
 }
 
-/// Hiển thị context menu thực sự
+/// Hiển thị context menu
 unsafe fn show_context_menu(hwnd: HWND) {
-    // Lấy vị trí cursor
     let mut point = POINT::default();
     let _ = GetCursorPos(&mut point);
-    
-    // Tạo popup menu
+
     let hmenu = CreatePopupMenu().unwrap_or_default();
     if hmenu.is_invalid() {
         log::error!("Failed to create popup menu");
         return;
     }
-    
-    // Thêm menu items
-    let _ = AppendMenuW(hmenu, MF_STRING, 1, w!("Config..."));
+
+    let _ = AppendMenuW(hmenu, MF_STRING, 1, w!("Cấu hình..."));
     let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
-    let _ = AppendMenuW(hmenu, MF_STRING, 2, w!("Exit"));
-    
-    // Set foreground window để menu đóng khi click ra ngoài
+    let _ = AppendMenuW(hmenu, MF_STRING, 2, w!("Thoát"));
+
     let _ = SetForegroundWindow(hwnd);
-    
-    // Track popup menu
+
     let _ = TrackPopupMenu(
         hmenu,
         TPM_BOTTOMALIGN | TPM_LEFTALIGN,
@@ -111,24 +108,25 @@ unsafe fn show_context_menu(hwnd: HWND) {
         hwnd,
         None,
     );
-    
-    // Cleanup
+
     let _ = DestroyMenu(hmenu);
 }
 
-impl TrayManager {
-    /// Tạo tray manager mới - TẤT CẢ phải trên cùng một thread!
-    pub fn new(tx: mpsc::Sender<TrayEvent>) -> Result<Self> {
-        // Store sender globally cho window procedure
-        let _ = TRAY_SENDER.set(tx.clone());
-        
-        // Channel để nhận kết quả từ tray thread
-        let (result_tx, result_rx) = std::sync::mpsc::channel();
-        
-        // Tạo window VÀ chạy message loop trên CÙNG MỘT thread
-        std::thread::spawn(move || {
-            log::info!("Tray thread started");
-            
+/// Khởi tạo tray icon và trả về receiver để nhận events
+/// Tray chạy trong thread riêng, giao tiếp qua std::sync::mpsc
+pub fn init_tray() -> Result<mpsc::Receiver<TrayEvent>> {
+    let (tx, rx) = mpsc::channel();
+
+    // Set global sender
+    TRAY_SENDER.set(tx).map_err(|_| anyhow::anyhow!("TRAY_SENDER already initialized"))?;
+
+    // Channel để đợi tray thread khởi tạo xong
+    let (ready_tx, ready_rx) = mpsc::channel();
+
+    std::thread::spawn(move || {
+        log::info!("Tray thread started");
+
+        unsafe {
             // Đăng ký window class
             let class_name = w!("BlinkReminderTrayClass");
             let wc = WNDCLASSW {
@@ -143,168 +141,110 @@ impl TrayManager {
                 lpszMenuName: PCWSTR::null(),
                 lpszClassName: class_name,
             };
-            
-            let atom = unsafe { RegisterClassW(&wc) };
-            if atom == 0 {
-                log::warn!("RegisterClassW failed or class already registered");
-            }
-            
+
+            RegisterClassW(&wc);
+
             // Tạo hidden window
-            let message_window = unsafe {
-                CreateWindowExW(
-                    WINDOW_EX_STYLE(0),
-                    class_name,
-                    w!("BlinkReminderTray"),
-                    WS_OVERLAPPED,
-                    0,
-                    0,
-                    1,
-                    1,
-                    Some(HWND::default()),
-                    Some(HMENU::default()),
-                    Some(HINSTANCE::default()),
-                    None,
-                )
-            };
-            
+            let message_window = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                class_name,
+                w!("BlinkReminderTray"),
+                WS_OVERLAPPED,
+                0, 0, 1, 1,
+                Some(HWND::default()),
+                Some(HMENU::default()),
+                Some(HINSTANCE::default()),
+                None,
+            );
+
             let Ok(message_window) = message_window else {
-                let _ = result_tx.send(Err(anyhow::anyhow!("Không thể tạo message window")));
+                log::error!("Failed to create tray message window");
+                let _ = ready_tx.send(false);
                 return;
             };
-            log::info!("Created message window: {:?}", message_window);
-            
-            // Setup NOTIFYICONDATAW
+
+            // Setup tray icon
             let mut nid = NOTIFYICONDATAW::default();
             nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
             nid.hWnd = message_window;
             nid.uID = 1;
             nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
             nid.uCallbackMessage = WM_TRAYICON;
-            
+
             // Load icon
-            let hicon = load_icon();
-            nid.hIcon = HICON(hicon.0);
-            
+            nid.hIcon = load_icon();
+
             // Set tooltip
-            let tooltip_text = "Blink Reminder";
-            let tooltip_utf16: Vec<u16> = tooltip_text.encode_utf16().chain(std::iter::once(0)).collect();
+            let tooltip = "Blink Reminder";
+            let tooltip_utf16: Vec<u16> = tooltip.encode_utf16().chain(std::iter::once(0)).collect();
             let copy_len = tooltip_utf16.len().min(128);
             nid.szTip[..copy_len].copy_from_slice(&tooltip_utf16[..copy_len]);
-            
-            log::info!("Adding tray icon...");
-            
+
             // Add to tray
-            let result = unsafe { Shell_NotifyIconW(NIM_ADD, &nid) };
-            if !result.as_bool() {
-                log::error!("Shell_NotifyIconW failed!");
-                let _ = result_tx.send(Err(anyhow::anyhow!("Không thể thêm tray icon")));
+            if !Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
+                log::error!("Shell_NotifyIconW failed");
+                let _ = ready_tx.send(false);
                 return;
             }
-            log::info!("Shell_NotifyIconW succeeded!");
-            
-            // Gửi success (chỉ gửi handle window để main thread giữ và gửi quit khi drop)
-            let _ = result_tx.send(Ok(message_window.0 as isize));
-            
-            // Message loop - PHẢI chạy trên thread này
-            log::info!("Starting message loop on tray thread");
-            unsafe {
-                let mut msg = MSG::default();
-                while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-                    log::debug!("Message received: msg={}, hwnd={:?}", msg.message, msg.hwnd);
-                    let _ = TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
-                }
+
+            log::info!("Tray icon added successfully");
+            let _ = ready_tx.send(true);
+
+            // Message loop
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
             }
-            log::info!("Message loop ended");
-            
+
             // Cleanup
-            unsafe {
-                let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
-                let _ = DestroyWindow(message_window);
-            }
-        });
-        
-        // Đợi kết quả từ tray thread
-        match result_rx.recv() {
-            Ok(Ok(message_window_raw)) => {
-                let message_window = HWND(message_window_raw as _);
-                log::info!("Tray icon created successfully");
-                Ok(Self { message_window })
-            }
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(anyhow::anyhow!("Tray thread crashed")),
+            let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
+            let _ = DestroyWindow(message_window);
         }
-    }
-}
 
-impl Drop for TrayManager {
-    fn drop(&mut self) {
-        // Cleanup được xử lý trong tray thread khi message loop kết thúc
-        // Gửi WM_QUIT để kết thúc message loop
-        log::info!("TrayManager dropped - sending quit message");
-        unsafe {
-            if self.message_window != HWND::default() {
-                PostMessageW(Some(self.message_window), WM_QUIT, WPARAM(0), LPARAM(0)).ok();
-            }
+        log::info!("Tray thread ended");
+    });
+
+    // Đợi tray khởi tạo xong
+    match ready_rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(true) => {
+            log::info!("Tray initialized successfully");
+            Ok(rx)
         }
+        Ok(false) => Err(anyhow::anyhow!("Tray initialization failed")),
+        Err(_) => Err(anyhow::anyhow!("Tray initialization timeout")),
     }
-}
-
-/// Khởi tạo system tray icon
-pub fn init_tray(tx: mpsc::Sender<TrayEvent>) -> Result<TrayManager> {
-    TrayManager::new(tx)
 }
 
 /// Load icon từ file hoặc dùng system icon
-fn load_icon() -> HANDLE {
-    // Thử load từ file
-    if let Some(icon_path) = get_icon_path() {
-        if let Ok(handle) = unsafe {
-            LoadImageW(
-                Some(HINSTANCE::default()),
-                PCWSTR::from_raw(icon_path.as_ptr()),
-                IMAGE_ICON,
-                16, 16,
-                LR_LOADFROMFILE,
-            )
-        } {
-            log::info!("Loaded icon from file");
-            return handle;
-        }
-    }
-    
-    // Fallback to system icon
-    log::warn!("Using system default icon");
-    let hicon = unsafe { LoadIconW(Some(HINSTANCE::default()), IDI_APPLICATION) };
-    HANDLE(hicon.unwrap_or_default().0)
-}
-
-/// Lấy đường dẫn đến icon file
-fn get_icon_path() -> Option<Vec<u16>> {
-    // Thử tìm icon cạnh executable trước
+fn load_icon() -> HICON {
+    // Thử load từ file cạnh executable
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
             let icon_path = exe_dir.join("icon.ico");
             if icon_path.exists() {
-                let path_str = icon_path.to_string_lossy();
-                let wide_path: Vec<u16> = path_str.encode_utf16().chain(std::iter::once(0)).collect();
-                log::info!("Found icon at: {}", path_str);
-                return Some(wide_path);
+                let path_wide: Vec<u16> = icon_path.to_string_lossy()
+                    .encode_utf16()
+                    .chain(std::iter::once(0))
+                    .collect();
+
+                if let Ok(handle) = unsafe {
+                    LoadImageW(
+                        Some(HINSTANCE::default()),
+                        PCWSTR::from_raw(path_wide.as_ptr()),
+                        IMAGE_ICON,
+                        16, 16,
+                        LR_LOADFROMFILE,
+                    )
+                } {
+                    log::info!("Loaded icon from: {}", icon_path.display());
+                    return HICON(handle.0);
+                }
             }
         }
     }
-    
-    // Fallback: tìm trong current directory
-    if let Ok(current_dir) = std::env::current_dir() {
-        let icon_path = current_dir.join("icon.ico");
-        if icon_path.exists() {
-            let path_str = icon_path.to_string_lossy();
-            let wide_path: Vec<u16> = path_str.encode_utf16().chain(std::iter::once(0)).collect();
-            log::info!("Found icon at: {}", path_str);
-            return Some(wide_path);
-        }
-    }
-    
-    log::warn!("icon.ico not found");
-    None
+
+    // Fallback to system icon
+    log::warn!("Using system default icon");
+    unsafe { LoadIconW(Some(HINSTANCE::default()), IDI_APPLICATION).unwrap_or_default() }
 }

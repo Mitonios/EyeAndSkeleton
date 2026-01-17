@@ -146,9 +146,9 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
         let screen_height = GetSystemMetrics(SM_CYSCREEN);
 
         // Kích thước window
-        let window_width = 200;
-        let window_height = 200;
-        let margin = 20;
+        let window_width = 400;
+        let window_height = 400;
+        let margin = 40;
 
         // Tính vị trí dựa trên position
         let (x, y) = match state.position {
@@ -158,10 +158,10 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
                 (screen_width - window_width) / 2,
                 (screen_height - window_height) / 2,
             ),
-            OverlayPosition::BottomLeft => (margin, screen_height - window_height - margin - 40), // -40 cho taskbar
+            OverlayPosition::BottomLeft => (margin, screen_height - window_height - margin - 80), // -80 cho taskbar
             OverlayPosition::BottomRight => (
                 screen_width - window_width - margin,
-                screen_height - window_height - margin - 40,
+                screen_height - window_height - margin - 80,
             ),
         };
 
@@ -251,7 +251,7 @@ fn draw_emoji(hwnd: HWND, overlay_type: OverlayType, frame_index: u32) -> Result
         // Tạo font lớn cho emoji
         let font_name_wide: Vec<u16> = "Segoe UI Emoji\0".encode_utf16().collect();
         let font = CreateFontW(
-            120,
+            240,
             0,
             0,
             0,
@@ -283,7 +283,7 @@ fn draw_emoji(hwnd: HWND, overlay_type: OverlayType, frame_index: u32) -> Result
         let emoji_wide: Vec<u16> = emoji.encode_utf16().collect();
 
         // Vẽ emoji ở center
-        let _ = TextOutW(hdc, 40, 40, &emoji_wide);
+        let _ = TextOutW(hdc, 80, 80, &emoji_wide);
 
         // Cleanup
         SelectObject(hdc, old_font);
