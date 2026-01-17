@@ -23,7 +23,7 @@
 - **Nhắc nhở chớp mắt**: Animation nhắc nhở theo chu kỳ 1/5/10/30 phút
 - **Nhắc nhở đứng dậy**: Animation nhắc nhở đứng dậy theo chu kỳ 30/45/60 phút
 - **Vị trí tùy chọn**: Chọn vị trí hiển thị overlay (góc trên/dưới, trái/phải, giữa màn hình)
-- **Overlay animation**: Emoji động hiển thị trong 5 giây, luôn ở trên cùng, bán trong suốt
+- **Overlay animation**: Emoji động hiển thị trong 5 giây, luôn ở trên cùng, trong suốt hoàn hảo (Direct2D)
 - **Chống spam**: Chỉ hiển thị 1 overlay tại một thời điểm, tránh chồng chéo
 - **Tự động lưu**: Thay đổi cấu hình được lưu ngay lập tức
 - **DPI Aware**: Hỗ trợ hiển thị sắc nét trên màn hình High-DPI
@@ -170,7 +170,7 @@ blink-reminder/
 │   ├── config.rs            # Cấu hình và persistence JSON
 │   ├── config_window.rs     # Config window sử dụng egui/eframe
 │   ├── timer.rs             # Dual timer với tokio async
-│   ├── overlay.rs           # Transparent overlay với emoji animation
+│   ├── overlay.rs           # Transparent overlay với Direct2D/DirectWrite
 │   └── singleton.rs         # Singleton pattern và IPC
 ├── build.rs                 # Embed icon và manifest vào executable
 ├── app.manifest             # DPI awareness manifest
@@ -184,7 +184,7 @@ blink-reminder/
 | Mục đích        | Crate                 | Mô tả                              |
 | --------------- | --------------------- | ---------------------------------- |
 | GUI Framework   | `eframe`, `egui`      | Cross-platform immediate mode GUI  |
-| Win32 APIs      | `windows`             | Tray, overlay, singleton           |
+| Win32 APIs      | `windows`             | Tray, overlay, singleton, Direct2D |
 | Async Runtime   | `tokio`               | Xử lý timers bất đồng bộ           |
 | Config          | `serde`, `serde_json` | Serialize/deserialize JSON         |
 | App directories | `directories`         | Đường dẫn %APPDATA%                |
@@ -221,9 +221,9 @@ Dự án này được phân phối dưới giấy phép MIT. Xem file `LICENSE`
 
 Nếu overlay emoji không hiện:
 
-- Kiểm tra Windows theme (dark/light mode có thể ảnh hưởng)
 - Đảm bảo không có ứng dụng fullscreen che khuất
 - Restart ứng dụng
+- Kiểm tra GPU driver (Direct2D yêu cầu driver đồ họa hoạt động)
 
 ### Config không lưu
 

@@ -5,7 +5,13 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::*;
+use windows::Win32::Graphics::Direct2D::Common::*;
+use windows::Win32::Graphics::Direct2D::*;
+use windows::Win32::Graphics::DirectWrite::*;
+use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Gdi::*;
+use windows::Win32::System::Com::CoInitializeEx;
+use windows::Win32::System::Com::COINIT_APARTMENTTHREADED;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Loại overlay để hiển thị
@@ -138,9 +144,12 @@ pub fn show_overlay(overlay_type: OverlayType) -> Result<()> {
     Ok(())
 }
 
-/// Tạo overlay window
+/// Tạo overlay window với Direct2D rendering
 fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
     unsafe {
+        // Khởi tạo COM cho Direct2D/DirectWrite
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
         // Đăng ký window class
         let class_name_wide: Vec<u16> = "BlinkReminderOverlayClass\0".encode_utf16().collect();
         let class_name = PCWSTR::from_raw(class_name_wide.as_ptr());
@@ -176,16 +185,16 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
                 (screen_width - window_width) / 2,
                 (screen_height - window_height) / 2,
             ),
-            OverlayPosition::BottomLeft => (margin, screen_height - window_height - margin - 80), // -80 cho taskbar
+            OverlayPosition::BottomLeft => (margin, screen_height - window_height - margin - 80),
             OverlayPosition::BottomRight => (
                 screen_width - window_width - margin,
                 screen_height - window_height - margin - 80,
             ),
         };
 
-        // Tạo window
+        // Tạo window với WS_EX_LAYERED cho transparency
         let hwnd = CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW,
+            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP,
             PCWSTR::from_raw(class_name.as_ptr()),
             PCWSTR::null(),
             WS_POPUP,
@@ -199,19 +208,167 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
             None,
         )?;
 
-        // Làm window transparent - dùng màu trắng làm color key
-        if let Err(e) = SetLayeredWindowAttributes(hwnd, COLORREF(0x00FFFFFF), 0, LWA_COLORKEY) {
-            log::warn!("Không thể set layered attributes: {:?}", e);
-        }
+        // Sử dụng UpdateLayeredWindow với per-pixel alpha thay vì color key
+        // Trước tiên cần tạo DIB section với alpha channel
+        let hdc_screen = GetDC(None);
+        let hdc_mem = CreateCompatibleDC(Some(hdc_screen));
+
+        // Tạo BITMAPINFO cho 32-bit ARGB bitmap
+        let bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: window_width,
+                biHeight: -window_height, // Top-down DIB
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: 0, // BI_RGB
+                biSizeImage: 0,
+                biXPelsPerMeter: 0,
+                biYPelsPerMeter: 0,
+                biClrUsed: 0,
+                biClrImportant: 0,
+            },
+            bmiColors: [RGBQUAD::default()],
+        };
+
+        let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+        let hbmp = CreateDIBSection(
+            Some(hdc_mem),
+            &bmi,
+            DIB_RGB_COLORS,
+            &mut bits,
+            None,
+            0,
+        )?;
+
+        let old_bmp = SelectObject(hdc_mem, hbmp.into());
+
+        // Tạo Direct2D render target cho DC
+        let d2d_factory: ID2D1Factory1 = D2D1CreateFactory(
+            D2D1_FACTORY_TYPE_SINGLE_THREADED,
+            None,
+        )?;
+
+        let render_props = D2D1_RENDER_TARGET_PROPERTIES {
+            r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            pixelFormat: D2D1_PIXEL_FORMAT {
+                format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+            },
+            dpiX: 0.0,
+            dpiY: 0.0,
+            usage: D2D1_RENDER_TARGET_USAGE_NONE,
+            minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
+        };
+
+        let dc_render_target = d2d_factory.CreateDCRenderTarget(&render_props)?;
+
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: window_width,
+            bottom: window_height,
+        };
+        dc_render_target.BindDC(hdc_mem, &rect)?;
+
+        // Tạo DirectWrite factory và text format
+        let dwrite_factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+
+        let font_name: Vec<u16> = "Segoe UI Emoji\0".encode_utf16().collect();
+        let locale: Vec<u16> = "en-US\0".encode_utf16().collect();
+
+        let text_format = dwrite_factory.CreateTextFormat(
+            PCWSTR::from_raw(font_name.as_ptr()),
+            None,
+            DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            200.0,
+            PCWSTR::from_raw(locale.as_ptr()),
+        )?;
+
+        text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+        text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+
+        // Tạo brush cho text
+        let text_brush = dc_render_target.CreateSolidColorBrush(
+            &D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+            None,
+        )?;
 
         // Hiển thị window
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        let _ = UpdateWindow(hwnd);
 
-        // Vẽ emoji ban đầu
-        draw_emoji(hwnd, state.overlay_type, 0)?;
+        // Hàm render một frame
+        let render_frame = |frame_index: u32| -> Result<()> {
+            let frames = get_animation_frames(state.overlay_type);
+            let emoji = frames.get(frame_index as usize).unwrap_or(&frames[0]);
+            let emoji_wide: Vec<u16> = emoji.encode_utf16().collect();
 
-        // Set timer để update animation (100ms)
+            dc_render_target.BeginDraw();
+
+            // Clear với transparent
+            dc_render_target.Clear(Some(&D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            }));
+
+            let size = dc_render_target.GetSize();
+            let layout_rect = D2D_RECT_F {
+                left: 0.0,
+                top: 0.0,
+                right: size.width,
+                bottom: size.height,
+            };
+
+            // Vẽ emoji với color font support
+            dc_render_target.DrawText(
+                &emoji_wide,
+                &text_format,
+                &layout_rect,
+                &text_brush,
+                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+
+            dc_render_target.EndDraw(None, None)?;
+
+            // Update layered window với per-pixel alpha
+            let blend = BLENDFUNCTION {
+                BlendOp: 0, // AC_SRC_OVER
+                BlendFlags: 0,
+                SourceConstantAlpha: 255,
+                AlphaFormat: 1, // AC_SRC_ALPHA
+            };
+
+            let pt_src = POINT { x: 0, y: 0 };
+            let pt_dst = POINT { x, y };
+            let size_wnd = SIZE {
+                cx: window_width,
+                cy: window_height,
+            };
+
+            UpdateLayeredWindow(
+                hwnd,
+                Some(hdc_screen),
+                Some(&pt_dst),
+                Some(&size_wnd),
+                Some(hdc_mem),
+                Some(&pt_src),
+                COLORREF(0),
+                Some(&blend),
+                ULW_ALPHA,
+            )?;
+
+            Ok(())
+        };
+
+        // Render frame đầu tiên
+        render_frame(0)?;
+
+        // Set timer để update animation
         SetTimer(Some(hwnd), 1, 100, None);
 
         // Message loop với animation
@@ -219,7 +376,6 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
         let mut last_frame = 0u32;
 
         while state.active.load(Ordering::SeqCst) {
-            // Check for messages với timeout
             if PeekMessageW(&mut msg, Some(hwnd), 0, 0, PM_REMOVE).as_bool() {
                 if msg.message == WM_QUIT {
                     break;
@@ -231,7 +387,9 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
             // Update animation
             let current_frame = state.current_frame.load(Ordering::SeqCst);
             if current_frame != last_frame {
-                draw_emoji(hwnd, state.overlay_type, current_frame)?;
+                if let Err(e) = render_frame(current_frame) {
+                    log::warn!("Render error: {:?}", e);
+                }
                 last_frame = current_frame;
             }
 
@@ -240,74 +398,14 @@ fn create_overlay_window(state: Arc<AnimationState>) -> Result<()> {
 
         // Cleanup
         let _ = KillTimer(Some(hwnd), 1);
+        SelectObject(hdc_mem, old_bmp);
+        let _ = DeleteObject(hbmp.into());
+        let _ = DeleteDC(hdc_mem);
+        let _ = ReleaseDC(None, hdc_screen);
         let _ = DestroyWindow(hwnd);
         let _ = UnregisterClassW(PCWSTR::from_raw(class_name.as_ptr()), Some(HINSTANCE::default()));
 
         log::info!("Overlay window closed");
-        Ok(())
-    }
-}
-
-/// Vẽ emoji lên window với frame index
-fn draw_emoji(hwnd: HWND, overlay_type: OverlayType, frame_index: u32) -> Result<()> {
-    unsafe {
-        let hdc = GetDC(Some(hwnd));
-        if hdc.is_invalid() {
-            return Err(anyhow::anyhow!("Không thể lấy device context"));
-        }
-
-        // Fill background với màu trắng (sẽ trở thành transparent qua color key)
-        let mut rect = RECT::default();
-        let _ = GetClientRect(hwnd, &mut rect);
-        let brush = CreateSolidBrush(COLORREF(0x00FFFFFF)); // White = transparent
-        FillRect(hdc, &rect, brush);
-        let _ = DeleteObject(brush.into());
-
-        // Set background mode to transparent for text
-        SetBkMode(hdc, TRANSPARENT);
-
-        // Tạo font lớn cho emoji
-        let font_name_wide: Vec<u16> = "Segoe UI Emoji\0".encode_utf16().collect();
-        let font = CreateFontW(
-            240,
-            0,
-            0,
-            0,
-            400,
-            0,
-            0,
-            0,
-            FONT_CHARSET(0),
-            FONT_OUTPUT_PRECISION(0),
-            FONT_CLIP_PRECISION(0),
-            FONT_QUALITY(0),
-            0,
-            PCWSTR::from_raw(font_name_wide.as_ptr()),
-        );
-
-        if font.is_invalid() {
-            let _ = ReleaseDC(Some(hwnd), hdc);
-            return Err(anyhow::anyhow!("Không thể tạo font"));
-        }
-
-        // Select font
-        let old_font = SelectObject(hdc, font.into());
-
-        // Lấy emoji frame
-        let frames = get_animation_frames(overlay_type);
-        let emoji = frames.get(frame_index as usize).unwrap_or(&frames[0]);
-
-        // Convert emoji to wide string
-        let emoji_wide: Vec<u16> = emoji.encode_utf16().collect();
-
-        // Vẽ emoji ở center
-        let _ = TextOutW(hdc, 80, 80, &emoji_wide);
-
-        // Cleanup
-        SelectObject(hdc, old_font);
-        let _ = DeleteObject(font.into());
-        let _ = ReleaseDC(Some(hwnd), hdc);
-
         Ok(())
     }
 }
@@ -327,8 +425,6 @@ unsafe extern "system" fn window_proc(
             LRESULT(0)
         }
         WM_TIMER => {
-            // Trigger redraw
-            let _ = InvalidateRect(Some(hwnd), None, false);
             LRESULT(0)
         }
         WM_DESTROY => {
