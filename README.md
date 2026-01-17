@@ -2,6 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-stable-brightgreen.svg)](https://www.rust-lang.org/)
 [![Windows](https://img.shields.io/badge/Windows-10%2B-blue.svg)](https://www.microsoft.com/windows/)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/your-username/blink-reminder)
 
 Ứng dụng nhắc nhở chớp mắt và đứng dậy cho người dùng Windows, giúp bảo vệ sức khỏe mắt và xương khớp.
 
@@ -23,9 +24,10 @@
 - **Nhắc nhở đứng dậy**: Animation nhắc nhở đứng dậy theo chu kỳ 30/45/60 phút
 - **Vị trí tùy chọn**: Chọn vị trí hiển thị overlay (góc trên/dưới, trái/phải, giữa màn hình)
 - **Overlay animation**: Emoji động hiển thị trong 5 giây, luôn ở trên cùng, bán trong suốt
+- **Chống spam**: Chỉ hiển thị 1 overlay tại một thời điểm, tránh chồng chéo
 - **Tự động lưu**: Thay đổi cấu hình được lưu ngay lập tức
 - **DPI Aware**: Hỗ trợ hiển thị sắc nét trên màn hình High-DPI
-- **Xử lý trùng lặp**: Khi thời gian nhắc đứng dậy trùng chớp mắt, ưu tiên hiển thị nhắc đứng dậy
+- **Xử lý trùng lặp**: Khi thời gian nhắc đứng dậy trùng chớp mắt, ưu tiên hiển thị nhắc đứng dậy và reset blink timer
 
 ## Yêu cầu hệ thống
 
@@ -86,7 +88,7 @@ Cửa sổ cấu hình sử dụng egui framework với giao diện hiện đạ
 │ Vị trí thông báo: [Giữa màn hình ▼]     │
 │                                         │
 │─────────────────────────────────────────│
-│ Phiên bản: 1.0.0                        │
+│ Phiên bản: 1.1.0                        │
 │ Tác giả: Mitonios            [Thoát]    │
 └─────────────────────────────────────────┘
 ```

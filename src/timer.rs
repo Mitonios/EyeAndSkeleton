@@ -169,9 +169,10 @@ impl TimerManager {
                     let std_now = Instant::now();
                     let time_to_standup = self.next_standup_time.saturating_duration_since(now);
 
-                    // Nếu standup sẽ hiển thị trong vòng 10 giây tới, bỏ qua blink
+                    // Nếu standup sẽ hiển thị trong vòng 10 giây tới hoặc vừa hiển thị, bỏ qua blink
+                    // Điều này xử lý cả trường hợp hai timer kích hoạt cùng lúc
                     if time_to_standup <= Duration::from_secs(10) {
-                        log::info!("Bỏ qua blink vì standup sắp hiển thị ({}s)", time_to_standup.as_secs());
+                        log::info!("Bỏ qua blink vì standup sắp/vừa hiển thị ({}s)", time_to_standup.as_secs());
                         continue;
                     }
 
@@ -194,24 +195,31 @@ impl TimerManager {
                     }
                 }
 
-                // Standup timer fired
+                // Standup timer fired - ưu tiên cao hơn blink
                 _ = self.standup_interval.tick() => {
                     log::info!("Timer standup kích hoạt");
+                    let now = time::Instant::now();
                     let std_now = Instant::now();
 
                     // Cập nhật next standup time
                     let standup_duration = Duration::from_secs(self.config.standup_interval as u64 * 60);
-                    self.next_standup_time = time::Instant::now() + standup_duration;
+                    self.next_standup_time = now + standup_duration;
 
-                    // Reset standup countdown
-                    if let Some(info) = get_timer_info() {
-                        update_timer_info(
-                            info.blink_next,
-                            std_now + standup_duration,
-                            self.config.blink_interval,
-                            self.config.standup_interval,
-                        );
-                    }
+                    // Reset cả blink timer để tránh blink hiển thị ngay sau standup
+                    // Điều này đảm bảo không có 2 notification liên tiếp
+                    let blink_duration = Duration::from_secs(self.config.blink_interval as u64 * 60);
+                    self.blink_interval = time::interval_at(now + blink_duration, blink_duration);
+                    self.blink_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+
+                    // Update countdown display
+                    update_timer_info(
+                        std_now + blink_duration,
+                        std_now + standup_duration,
+                        self.config.blink_interval,
+                        self.config.standup_interval,
+                    );
+
+                    log::info!("Đã reset blink timer sau standup");
 
                     if tx.send(TimerEvent::ShowStandUp).await.is_err() {
                         log::warn!("Không thể gửi TimerEvent::ShowStandUp");

@@ -45,8 +45,26 @@ struct AnimationState {
 /// Global animation state (thread-safe với OnceLock + Mutex)
 static ANIM_STATE: OnceLock<Mutex<Option<Arc<AnimationState>>>> = OnceLock::new();
 
+/// Kiểm tra xem overlay có đang hiển thị không
+pub fn is_overlay_active() -> bool {
+    if let Some(mutex) = ANIM_STATE.get() {
+        if let Ok(guard) = mutex.lock() {
+            if let Some(state) = guard.as_ref() {
+                return state.active.load(Ordering::SeqCst);
+            }
+        }
+    }
+    false
+}
+
 /// Hiển thị overlay animation
 pub fn show_overlay(overlay_type: OverlayType) -> Result<()> {
+    // Kiểm tra nếu đã có overlay đang hiển thị, bỏ qua
+    if is_overlay_active() {
+        log::info!("Bỏ qua overlay {:?} vì đã có overlay đang hiển thị", overlay_type);
+        return Ok(());
+    }
+
     // Đọc vị trí từ config
     let position = crate::config::load_config()
         .map(|c| c.overlay_position)

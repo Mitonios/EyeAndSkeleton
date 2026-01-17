@@ -13,8 +13,8 @@ fn main() {
         res.set("CompanyName", "Mitonios with AI");
         res.set("OriginalFilename", "blink-reminder.exe");
         res.set("InternalName", "blink-reminder");
-        res.set("FileVersion", "1.0.0.0");
-        res.set("ProductVersion", "1.0.0");
+        res.set("FileVersion", "1.1.0.0");
+        res.set("ProductVersion", "1.1.0");
         res.set("LegalCopyright", "Copyright © 2025 Mitonios with AI");
 
         if let Err(e) = res.compile() {
