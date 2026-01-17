@@ -30,6 +30,9 @@ windows = { version = "0.62.2", features = [
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Imaging",
     "Win32_System_Com",
+    # Idle detection
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_SystemInformation",
 ] }
 
 # Async timers

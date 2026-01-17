@@ -28,6 +28,7 @@
 - **Tự động lưu**: Thay đổi cấu hình được lưu ngay lập tức
 - **DPI Aware**: Hỗ trợ hiển thị sắc nét trên màn hình High-DPI
 - **Xử lý trùng lặp**: Khi thời gian nhắc đứng dậy trùng chớp mắt, ưu tiên hiển thị nhắc đứng dậy và reset blink timer
+- **Idle Detection**: Tự động reset countdown khi phát hiện user không hoạt động (có thể tắt/cấu hình ngưỡng)
 
 ## Yêu cầu hệ thống
 
@@ -87,6 +88,8 @@ Cửa sổ cấu hình sử dụng egui framework với giao diện hiện đạ
 │                                         │
 │ Vị trí thông báo: [Giữa màn hình ▼]     │
 │                                         │
+│ Reset khi idle: [2 phút ▼]              │
+│                                         │
 │─────────────────────────────────────────│
 │ Phiên bản: 1.1.0                        │
 │ Tác giả: Mitonios            [Thoát]    │
@@ -112,6 +115,20 @@ Cửa sổ cấu hình sử dụng egui framework với giao diện hiện đạ
 - Giữa màn hình (mặc định)
 - Dưới - Trái
 - Dưới - Phải
+
+#### Reset khi idle
+
+Khi user không hoạt động (không có input keyboard/mouse) vượt ngưỡng cài đặt:
+- Tạm dừng không hiển thị thông báo
+- Khi user trở lại hoạt động → reset countdown về từ đầu
+
+Options:
+- Tắt (không detect idle)
+- 1 phút
+- 2 phút (mặc định)
+- 3 phút
+- 5 phút
+- 10 phút
 
 #### Các nút điều khiển
 
@@ -169,7 +186,7 @@ blink-reminder/
 │   ├── tray.rs              # System tray icon và menu (Win32 API)
 │   ├── config.rs            # Cấu hình và persistence JSON
 │   ├── config_window.rs     # Config window sử dụng egui/eframe
-│   ├── timer.rs             # Dual timer với tokio async
+│   ├── timer.rs             # Dual timer với tokio async + idle detection
 │   ├── overlay.rs           # Transparent overlay với Direct2D/DirectWrite
 │   └── singleton.rs         # Singleton pattern và IPC
 ├── build.rs                 # Embed icon và manifest vào executable

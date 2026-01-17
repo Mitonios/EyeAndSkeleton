@@ -60,6 +60,14 @@ pub struct AppConfig {
     /// Vị trí hiển thị overlay
     #[serde(default)]
     pub overlay_position: OverlayPosition,
+
+    /// Ngưỡng idle để reset countdown (phút), 0 = tắt
+    #[serde(default = "default_idle_threshold")]
+    pub idle_threshold: u32,
+}
+
+fn default_idle_threshold() -> u32 {
+    2 // Mặc định 2 phút
 }
 
 impl Default for AppConfig {
@@ -68,6 +76,7 @@ impl Default for AppConfig {
             blink_interval: 5,     // 5 phút mặc định
             standup_interval: 45,  // 45 phút mặc định
             overlay_position: OverlayPosition::default(),
+            idle_threshold: default_idle_threshold(),
         }
     }
 }
@@ -93,7 +102,27 @@ impl AppConfig {
             ));
         }
 
+        // Validate idle threshold (0 = tắt, 1-10 phút)
+        if self.idle_threshold > 10 {
+            return Err(anyhow::anyhow!(
+                "Idle threshold phải từ 0-10 phút. Giá trị hiện tại: {}",
+                self.idle_threshold
+            ));
+        }
+
         Ok(())
+    }
+
+    /// Lấy các giá trị idle threshold hợp lệ
+    pub fn valid_idle_thresholds() -> &'static [(u32, &'static str)] {
+        &[
+            (0, "Tắt"),
+            (1, "1 phút"),
+            (2, "2 phút"),
+            (3, "3 phút"),
+            (5, "5 phút"),
+            (10, "10 phút"),
+        ]
     }
 }
 

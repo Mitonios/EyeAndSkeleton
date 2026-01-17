@@ -18,6 +18,8 @@ const STANDUP_OPTIONS: [u32; 3] = [30, 45, 60];
 /// Metadata từ Cargo
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const APP_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
+/// Build info từ build.rs (timestamp + git hash)
+const BUILD_INFO: &str = env!("BUILD_INFO");
 
 /// Messages từ background thread đến UI
 #[derive(Debug, Clone)]
@@ -38,6 +40,8 @@ pub struct ConfigApp {
     standup_idx: usize,
     /// Selected index cho position combo
     position_idx: usize,
+    /// Selected index cho idle threshold combo
+    idle_idx: usize,
     /// Channel để gửi config updates đến tokio (tokio channel)
     config_tx: Option<tokio_mpsc::Sender<Arc<AppConfig>>>,
     /// Channel để nhận messages từ tray (std channel - non-blocking)
@@ -62,12 +66,17 @@ impl ConfigApp {
             .position(|&x| x == config.standup_interval)
             .unwrap_or(1);
         let position_idx = config.overlay_position.index();
+        let idle_idx = AppConfig::valid_idle_thresholds()
+            .iter()
+            .position(|(v, _)| *v == config.idle_threshold)
+            .unwrap_or(2); // Mặc định 2 phút
 
         Self {
             config,
             blink_idx,
             standup_idx,
             position_idx,
+            idle_idx,
             config_tx,
             ui_rx,
             should_exit: false,
@@ -79,6 +88,7 @@ impl ConfigApp {
         self.config.blink_interval = BLINK_OPTIONS[self.blink_idx];
         self.config.standup_interval = STANDUP_OPTIONS[self.standup_idx];
         self.config.overlay_position = OverlayPosition::from_index(self.position_idx);
+        self.config.idle_threshold = AppConfig::valid_idle_thresholds()[self.idle_idx].0;
 
         log::info!("Saving config: {:?}", self.config);
 
@@ -236,6 +246,32 @@ impl eframe::App for ConfigApp {
                 }
             });
 
+            ui.add_space(5.0);
+
+            // === IDLE THRESHOLD SECTION ===
+            ui.horizontal(|ui| {
+                ui.label("Reset khi idle:");
+
+                let idle_options = AppConfig::valid_idle_thresholds();
+                let idle_changed = egui::ComboBox::from_id_salt("idle_combo")
+                    .selected_text(idle_options[self.idle_idx].1)
+                    .show_ui(ui, |ui| {
+                        let mut changed = false;
+                        for (i, (_, label)) in idle_options.iter().enumerate() {
+                            if ui.selectable_value(&mut self.idle_idx, i, *label).changed() {
+                                changed = true;
+                            }
+                        }
+                        changed
+                    })
+                    .inner
+                    .unwrap_or(false);
+
+                if idle_changed {
+                    self.save_and_notify();
+                }
+            });
+
             ui.add_space(15.0);
             ui.separator();
             ui.add_space(5.0);
@@ -243,7 +279,7 @@ impl eframe::App for ConfigApp {
             // === VERSION INFO + QUIT BUTTON ===
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(format!("Phiên bản: {}", APP_VERSION));
+                    ui.label(format!("Phiên bản: {} - Build: {}", APP_VERSION, BUILD_INFO));
                     ui.label(format!("Tác giả: {}", APP_AUTHORS));
                 });
 
@@ -273,8 +309,8 @@ pub fn run_config_window(
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Blink Reminder - Cấu hình")
-            .with_inner_size([380.0, 200.0])
-            .with_min_inner_size([350.0, 180.0])
+            .with_inner_size([380.0, 230.0])
+            .with_min_inner_size([350.0, 210.0])
             .with_resizable(true),
         centered: true,
         ..Default::default()
