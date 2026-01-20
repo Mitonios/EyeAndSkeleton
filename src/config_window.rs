@@ -6,8 +6,8 @@ use crate::config::{AppConfig, OverlayPosition};
 use crate::overlay;
 use crate::timer;
 use eframe::egui::{self, FontData, FontDefinitions, FontFamily};
-use std::sync::Arc;
 use std::sync::mpsc as std_mpsc;
+use std::sync::Arc;
 use tokio::sync::mpsc as tokio_mpsc;
 
 /// Blink interval options (phút)
@@ -155,7 +155,10 @@ impl eframe::App for ConfigApp {
                     .show_ui(ui, |ui| {
                         let mut changed = false;
                         for (i, &opt) in BLINK_OPTIONS.iter().enumerate() {
-                            if ui.selectable_value(&mut self.blink_idx, i, format!("{}", opt)).changed() {
+                            if ui
+                                .selectable_value(&mut self.blink_idx, i, format!("{}", opt))
+                                .changed()
+                            {
                                 changed = true;
                             }
                         }
@@ -193,7 +196,10 @@ impl eframe::App for ConfigApp {
                     .show_ui(ui, |ui| {
                         let mut changed = false;
                         for (i, &opt) in STANDUP_OPTIONS.iter().enumerate() {
-                            if ui.selectable_value(&mut self.standup_idx, i, format!("{}", opt)).changed() {
+                            if ui
+                                .selectable_value(&mut self.standup_idx, i, format!("{}", opt))
+                                .changed()
+                            {
                                 changed = true;
                             }
                         }
@@ -232,7 +238,10 @@ impl eframe::App for ConfigApp {
                     .show_ui(ui, |ui| {
                         let mut changed = false;
                         for (i, pos) in positions.iter().enumerate() {
-                            if ui.selectable_value(&mut self.position_idx, i, pos.display_name()).changed() {
+                            if ui
+                                .selectable_value(&mut self.position_idx, i, pos.display_name())
+                                .changed()
+                            {
                                 changed = true;
                             }
                         }
@@ -279,7 +288,10 @@ impl eframe::App for ConfigApp {
             // === VERSION INFO + QUIT BUTTON ===
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(format!("Phiên bản: {} - Build: {}", APP_VERSION, BUILD_INFO));
+                    ui.label(format!(
+                        "Phiên bản: {} - Build: {}",
+                        APP_VERSION, BUILD_INFO
+                    ));
                     ui.label(format!("Tác giả: {}", APP_AUTHORS));
                 });
 
@@ -322,6 +334,11 @@ pub fn run_config_window(
         "Blink Reminder",
         options,
         Box::new(move |cc| {
+            // Set dark mode and white text color by default
+            let mut visuals = egui::Visuals::dark();
+            visuals.override_text_color = Some(egui::Color32::WHITE);
+            cc.egui_ctx.set_visuals(visuals);
+
             setup_custom_fonts(&cc.egui_ctx);
             Ok(Box::new(ConfigApp::new(config, config_tx, ui_rx)))
         }),

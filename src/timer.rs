@@ -1,12 +1,12 @@
 use crate::config::AppConfig;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time;
-use std::sync::OnceLock;
-use std::sync::Mutex;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows::Win32::System::SystemInformation::GetTickCount;
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 
 /// Global timer info cho countdown display
 pub static TIMER_INFO: OnceLock<Mutex<TimerInfo>> = OnceLock::new();
@@ -67,14 +67,19 @@ fn get_idle_duration() -> Duration {
 }
 
 /// Update timer info
-fn update_timer_info(blink_next: Instant, standup_next: Instant, blink_interval_mins: u32, standup_interval_mins: u32) {
+fn update_timer_info(
+    blink_next: Instant,
+    standup_next: Instant,
+    blink_interval_mins: u32,
+    standup_interval_mins: u32,
+) {
     let info = TimerInfo {
         blink_next,
         standup_next,
         blink_interval_mins,
         standup_interval_mins,
     };
-    
+
     if let Some(mutex) = TIMER_INFO.get() {
         if let Ok(mut guard) = mutex.lock() {
             *guard = info;
@@ -144,12 +149,14 @@ impl TimerManager {
         // Restart blink timer
         let blink_duration = Duration::from_secs(self.config.blink_interval as u64 * 60);
         self.blink_interval = time::interval_at(now + blink_duration, blink_duration);
-        self.blink_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+        self.blink_interval
+            .set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
         // Restart standup timer
         let standup_duration = Duration::from_secs(self.config.standup_interval as u64 * 60);
         self.standup_interval = time::interval_at(now + standup_duration, standup_duration);
-        self.standup_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+        self.standup_interval
+            .set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
         self.next_standup_time = now + standup_duration;
 
@@ -162,6 +169,7 @@ impl TimerManager {
         );
 
         log::info!("Đã reset tất cả timers do user trở lại từ idle");
+        crate::debug_logger::log_event("Bắt đầu đếm (Reset sau idle)");
     }
 
     /// Cập nhật config và restart timers
@@ -173,12 +181,14 @@ impl TimerManager {
         // Restart blink timer
         let blink_duration = Duration::from_secs(self.config.blink_interval as u64 * 60);
         self.blink_interval = time::interval_at(now + blink_duration, blink_duration);
-        self.blink_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+        self.blink_interval
+            .set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
         // Restart standup timer
         let standup_duration = Duration::from_secs(self.config.standup_interval as u64 * 60);
         self.standup_interval = time::interval_at(now + standup_duration, standup_duration);
-        self.standup_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+        self.standup_interval
+            .set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
         self.next_standup_time = now + standup_duration;
 
@@ -190,8 +200,12 @@ impl TimerManager {
             self.config.standup_interval,
         );
 
-        log::info!("Đã cập nhật timers với config mới: blink={}min, standup={}min",
-                  self.config.blink_interval, self.config.standup_interval);
+        log::info!(
+            "Đã cập nhật timers với config mới: blink={}min, standup={}min",
+            self.config.blink_interval,
+            self.config.standup_interval
+        );
+        crate::debug_logger::log_event("Bắt đầu đếm (Cập nhật cấu hình)");
     }
 
     /// Chạy timers với khả năng update config
@@ -229,11 +243,13 @@ impl TimerManager {
                                 log::info!("User idle detected ({}s >= {}s threshold)",
                                           idle_duration.as_secs(), idle_threshold.as_secs());
                                 self.was_idle = true;
+                                crate::debug_logger::log_event("Phát hiện idle");
                             }
                         } else if self.was_idle {
                             // User vừa trở lại từ idle -> reset timers
                             log::info!("User trở lại từ idle, reset countdown");
                             self.was_idle = false;
+                            crate::debug_logger::log_event("Dừng idle (User hoạt động)");
                             self.reset_all_timers();
                         }
                     }
@@ -326,7 +342,6 @@ impl TimerManager {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

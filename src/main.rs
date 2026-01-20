@@ -1,23 +1,25 @@
 // Ẩn console window trên Windows
 #![windows_subsystem = "windows"]
 
+use crate::config::AppConfig;
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::mpsc as tokio_mpsc;
-use crate::config::AppConfig;
 
 mod config;
+mod config_window;
+mod debug_logger;
 mod overlay;
+mod singleton;
 mod timer;
 mod tray;
-mod config_window;
-mod singleton;
 
 fn main() -> Result<()> {
     // Initialize logging
     env_logger::init();
 
     log::info!("Khởi động Blink Reminder...");
+    debug_logger::log_event("Khởi động ứng dụng");
 
     // Kiểm tra singleton - chỉ cho phép 1 instance chạy
     let _singleton_guard = match singleton::acquire_singleton()? {
@@ -88,6 +90,8 @@ fn main() -> Result<()> {
                             std::thread::spawn(|| {
                                 if let Err(e) = overlay::show_overlay(overlay::OverlayType::Blink) {
                                     log::error!("Failed to show blink overlay: {}", e);
+                                } else {
+                                    debug_logger::log_event("Bắt đầu hiển thị nhắc nhở: Blink");
                                 }
                             });
                         }
@@ -96,6 +100,8 @@ fn main() -> Result<()> {
                             std::thread::spawn(|| {
                                 if let Err(e) = overlay::show_overlay(overlay::OverlayType::StandUp) {
                                     log::error!("Failed to show stand up overlay: {}", e);
+                                } else {
+                                    debug_logger::log_event("Bắt đầu hiển thị nhắc nhở: StandUp");
                                 }
                             });
                         }
@@ -141,5 +147,6 @@ fn main() -> Result<()> {
 
     // Cleanup
     log::info!("Shutting down Blink Reminder...");
+    debug_logger::log_event("Thoát ứng dụng (Log out)");
     Ok(())
 }
