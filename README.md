@@ -1,5 +1,7 @@
 # Blink Reminder
 
+[image](image.png)
+
 [![Rust](https://img.shields.io/badge/rust-stable-brightgreen.svg)](https://www.rust-lang.org/)
 [![Windows](https://img.shields.io/badge/Windows-10%2B-blue.svg)](https://www.microsoft.com/windows/)
 [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/your-username/blink-reminder)
@@ -119,10 +121,12 @@ Cửa sổ cấu hình sử dụng egui framework với giao diện hiện đạ
 #### Reset khi idle
 
 Khi user không hoạt động (không có input keyboard/mouse) vượt ngưỡng cài đặt:
+
 - Tạm dừng không hiển thị thông báo
 - Khi user trở lại hoạt động → reset countdown về từ đầu
 
 Options:
+
 - Tắt (không detect idle)
 - 1 phút
 - 2 phút (mặc định)
