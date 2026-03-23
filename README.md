@@ -1,276 +1,294 @@
-# Blink Reminder
+<div align="center">
+  <img src="icon.png" alt="Blink Reminder Icon" width="120">
 
-[image](image.png)
+  # 👁️ Blink Reminder
 
-[![Rust](https://img.shields.io/badge/rust-stable-brightgreen.svg)](https://www.rust-lang.org/)
-[![Windows](https://img.shields.io/badge/Windows-10%2B-blue.svg)](https://www.microsoft.com/windows/)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/your-username/blink-reminder)
+  **Nhắc nhở bạn chớp mắt và đứng dậy — bảo vệ sức khỏe mỗi ngày!**
 
-Ứng dụng nhắc nhở chớp mắt và đứng dậy cho người dùng Windows, giúp bảo vệ sức khỏe mắt và xương khớp.
+  Ứng dụng miễn phí dành cho Windows, chạy nhẹ nhàng ở góc màn hình,<br>
+  giúp bạn tránh mỏi mắt và đau lưng khi ngồi máy tính lâu.
 
-## Mục lục
+  [![Windows 10+](https://img.shields.io/badge/Windows-10%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://www.microsoft.com/windows/)
+  [![Phiên bản 1.1.0](https://img.shields.io/badge/Phi%C3%AAn%20b%E1%BA%A3n-1.1.0-28a745?style=for-the-badge)](https://github.com/Mitonios/EyeAndSkeleton/releases/latest)
+  [![Miễn phí](https://img.shields.io/badge/Mi%E1%BB%85n%20ph%C3%AD-MIT-f5c542?style=for-the-badge)](LICENSE)
 
-- [Tính năng](#tính-năng)
-- [Yêu cầu hệ thống](#yêu-cầu-hệ-thống)
-- [Cài đặt](#cài-đặt)
-- [Cách sử dụng](#cách-sử-dụng)
-- [Cấu trúc dự án](#cấu-trúc-dự-án)
-- [Dependencies](#dependencies)
-- [License](#license)
+</div>
 
-## Tính năng
+---
 
-- **Chạy nền**: Ứng dụng chạy ẩn ở system tray, không hiển thị trên taskbar
-- **Singleton**: Chỉ cho phép 1 instance chạy - mở lại sẽ hiển thị Config window
-- **Nhắc nhở chớp mắt**: Animation nhắc nhở theo chu kỳ 1/5/10/30 phút
-- **Nhắc nhở đứng dậy**: Animation nhắc nhở đứng dậy theo chu kỳ 30/45/60 phút
-- **Vị trí tùy chọn**: Chọn vị trí hiển thị overlay (góc trên/dưới, trái/phải, giữa màn hình)
-- **Overlay animation**: Emoji động hiển thị trong 5 giây, luôn ở trên cùng, trong suốt hoàn hảo (Direct2D)
-- **Chống spam**: Chỉ hiển thị 1 overlay tại một thời điểm, tránh chồng chéo
-- **Tự động lưu**: Thay đổi cấu hình được lưu ngay lập tức
-- **DPI Aware**: Hỗ trợ hiển thị sắc nét trên màn hình High-DPI
-- **Xử lý trùng lặp**: Khi thời gian nhắc đứng dậy trùng chớp mắt, ưu tiên hiển thị nhắc đứng dậy và reset blink timer
-- **Idle Detection**: Tự động reset countdown khi phát hiện user không hoạt động (có thể tắt/cấu hình ngưỡng)
+## 🚀 Bắt đầu nhanh
 
-## Yêu cầu hệ thống
+Chỉ cần **3 bước** để sử dụng — không cần cài đặt phức tạp!
 
-- **Hệ điều hành**: Windows 10/11
-- **Bộ nhớ**: RAM 64MB (minimum)
-- **Đĩa**: 10MB dung lượng trống
-- **Rust**: Rust toolchain stable (phiên bản 1.70+)
+### 1️⃣ Tải về
 
-## Cài đặt
+👉 [**Tải Blink Reminder (.exe)**](https://github.com/Mitonios/EyeAndSkeleton/releases/latest)
 
-### Clone repository
+Vào trang trên, tìm file **`blink-reminder.exe`** và nhấn tải về.
+
+### 2️⃣ Chạy ứng dụng
+
+Nhấp đúp vào file `blink-reminder.exe` để chạy.
+
+> ⚠️ **Windows có thể hiện cảnh báo bảo mật** (vì ứng dụng chưa được ký số).
+> Đây là bình thường! Nhấn **"More info"** (Thông tin thêm) → **"Run anyway"** (Vẫn chạy).
+
+### 3️⃣ Xong rồi!
+
+Ứng dụng sẽ chạy ẩn ở **khay hệ thống** (system tray) — khu vực biểu tượng nhỏ gần đồng hồ, góc phải dưới màn hình. Bạn sẽ thấy biểu tượng con heo nhỏ xuất hiện ở đó.
+
+---
+
+## ✨ Tính năng
+
+| | Tính năng | Mô tả |
+|:---:|:---|:---|
+| 👁️ | **Nhắc chớp mắt** | Hiện animation nhắc bạn chớp mắt theo chu kỳ 1 / 5 / 10 / 30 phút |
+| 🧍 | **Nhắc đứng dậy** | Hiện animation nhắc bạn đứng dậy vận động theo chu kỳ 30 / 45 / 60 phút |
+| 📍 | **Vị trí tùy chọn** | Chọn vị trí hiển thị: góc trên-trái, trên-phải, giữa màn hình, dưới-trái, dưới-phải |
+| 💾 | **Tự động lưu** | Thay đổi cài đặt được lưu ngay lập tức, không cần bấm nút "Lưu" |
+| 💤 | **Phát hiện nghỉ** | Tự động tạm dừng khi bạn rời máy tính, reset lại khi bạn quay lại |
+| 🪶 | **Siêu nhẹ** | Chỉ chiếm ~10MB ổ cứng và ~64MB RAM — không làm chậm máy |
+| 🔒 | **Chạy một lần** | Chỉ cho phép 1 cửa sổ chạy, tránh trùng lặp |
+
+---
+
+## 📸 Giao diện
+
+<div align="center">
+  <img src="image.png" alt="Cửa sổ cấu hình Blink Reminder" width="500">
+  <br>
+  <em>Cửa sổ cấu hình — nơi bạn tùy chỉnh mọi thứ</em>
+</div>
+
+<br>
+
+Trong cửa sổ cấu hình, bạn có thể:
+
+- **Chọn thời gian nhắc chớp mắt** — bao lâu thì nhắc một lần (mặc định: 5 phút)
+- **Chọn thời gian nhắc đứng dậy** — bao lâu thì nhắc đứng dậy (mặc định: 45 phút)
+- **Chọn vị trí thông báo** — thông báo hiện ở đâu trên màn hình (mặc định: giữa màn hình)
+- **Cài đặt phát hiện nghỉ** — bao lâu không dùng máy thì tạm dừng nhắc nhở (mặc định: 2 phút)
+- **Xem countdown** — thời gian đếm ngược đến lần nhắc tiếp theo
+- **Nút Test** — thử ngay animation nhắc nhở
+
+---
+
+## 🔔 Cách hoạt động
+
+### Biểu tượng ở khay hệ thống (System Tray)
+
+Sau khi chạy, ứng dụng nằm ở **khay hệ thống** — dãy biểu tượng nhỏ ở góc phải dưới màn hình, cạnh đồng hồ.
+
+- **Nhấp trái** vào biểu tượng → Mở cửa sổ cấu hình
+- **Nhấp phải** vào biểu tượng → Hiện menu (Cấu hình / Thoát)
+
+> 💡 **Mẹo:** Nếu không thấy biểu tượng, nhấn mũi tên **˄** ở khay hệ thống để hiện các biểu tượng ẩn.
+
+### Animation nhắc nhở
+
+Khi đến giờ nhắc nhở, một animation emoji sẽ hiện trên màn hình trong **5 giây** rồi tự biến mất:
+
+| Loại nhắc nhở | Animation | Ý nghĩa |
+|:---:|:---:|:---|
+| Chớp mắt | 😌 ↔ 🙂 | Nhắm mắt — mở mắt, hãy chớp mắt nhé! |
+| Đứng dậy | 🧍 ↔ 🧎 | Đứng lên — ngồi xuống, hãy vận động nhé! |
+
+### Đóng cửa sổ ≠ Tắt ứng dụng
+
+- Nhấn nút **X** (đóng cửa sổ) → Ứng dụng **vẫn chạy** ở khay hệ thống
+- Muốn tắt hẳn → Nhấp phải vào biểu tượng ở khay → chọn **"Thoát"**
+
+---
+
+## ❓ Câu hỏi thường gặp
+
+<details>
+<summary><b>Windows hiện cảnh báo bảo mật khi chạy?</b></summary>
+<br>
+Đây là bình thường! Vì ứng dụng chưa được ký số (code signing), Windows SmartScreen sẽ hiện cảnh báo. Bạn chỉ cần:
+
+1. Nhấn **"More info"** (Thông tin thêm)
+2. Nhấn **"Run anyway"** (Vẫn chạy)
+
+Ứng dụng hoàn toàn an toàn và mã nguồn mở — bạn có thể xem toàn bộ code trên trang GitHub này.
+</details>
+
+<details>
+<summary><b>Làm sao để ứng dụng tự khởi động cùng Windows?</b></summary>
+<br>
+
+1. Nhấn **Win + R**, gõ `shell:startup` rồi nhấn Enter
+2. Một thư mục sẽ mở ra — đây là thư mục "Khởi động cùng Windows"
+3. Copy file `blink-reminder.exe` hoặc tạo shortcut của nó vào thư mục này
+4. Từ giờ mỗi khi bật máy, ứng dụng sẽ tự động chạy!
+</details>
+
+<details>
+<summary><b>Thông báo nhắc nhở không hiện lên?</b></summary>
+<br>
+
+- Kiểm tra xem ứng dụng có đang chạy ở khay hệ thống không
+- Nếu đang dùng ứng dụng toàn màn hình (game, video), thông báo có thể bị che
+- Thử nhấn nút **Test** trong cửa sổ cấu hình để kiểm tra
+- Nếu vẫn không được, thử khởi động lại ứng dụng
+</details>
+
+<details>
+<summary><b>Cài đặt của tôi không được lưu?</b></summary>
+<br>
+
+Cài đặt được lưu tự động vào thư mục `%APPDATA%/blink-reminder/`. Nếu không lưu được:
+
+- Kiểm tra quyền ghi vào thư mục AppData
+- Thử chạy ứng dụng với quyền Administrator
+</details>
+
+<details>
+<summary><b>Ứng dụng có chiếm nhiều tài nguyên không?</b></summary>
+<br>
+
+Không! Blink Reminder rất nhẹ:
+- **Ổ cứng:** ~10MB
+- **RAM:** ~64MB
+- **CPU:** Gần như 0% khi chạy nền
+
+Ứng dụng được thiết kế để chạy nền cả ngày mà không ảnh hưởng đến hiệu suất máy tính.
+</details>
+
+<details>
+<summary><b>Phát hiện nghỉ (Idle Detection) là gì?</b></summary>
+<br>
+
+Khi bạn rời khỏi máy tính (không di chuột, không gõ phím) quá thời gian cài đặt (mặc định: 2 phút), ứng dụng sẽ:
+
+- **Tạm dừng** nhắc nhở (vì bạn đang nghỉ rồi!)
+- Khi bạn quay lại dùng máy → **reset đếm ngược** từ đầu
+
+Bạn có thể tắt tính năng này hoặc thay đổi ngưỡng thời gian trong cửa sổ cấu hình.
+</details>
+
+---
+
+<details>
+<summary><h2>🛠️ Dành cho nhà phát triển</h2></summary>
+
+### Yêu cầu
+
+- **Rust** toolchain stable (1.70+)
+- **Windows** 10/11
+
+### Build từ mã nguồn
 
 ```bash
-git clone https://github.com/your-username/blink-reminder.git
-cd blink-reminder
-```
-
-### Build ứng dụng
-
-```bash
+git clone https://github.com/Mitonios/EyeAndSkeleton.git
+cd EyeAndSkeleton
 cargo build --release
 ```
 
-File executable nằm tại `target/release/blink-reminder.exe` (kèm `icon.ico` cùng thư mục nếu cần).
+File executable: `target/release/blink-reminder.exe`
 
-### Chạy ứng dụng
+### Chạy trong chế độ phát triển
 
 ```bash
 cargo run --release
 ```
 
-Hoặc chạy trực tiếp file `.exe` (cần copy `icon.ico` cùng thư mục).
+Bật logging để debug:
 
-## Cách sử dụng
-
-### System Tray
-
-Ứng dụng chạy ẩn ở system tray (biểu tượng gần đồng hồ):
-
-- **Click trái**: Mở cửa sổ cấu hình
-- **Click phải**: Hiển thị menu
-  - **Cấu hình...**: Mở cửa sổ cấu hình
-  - **Thoát**: Thoát ứng dụng
-
-### Màn hình cấu hình
-
-Cửa sổ cấu hình sử dụng egui framework với giao diện hiện đại:
-
-```
-┌─────────────────────────────────────────┐
-│ Blink Reminder - Cấu hình               │
-├─────────────────────────────────────────┤
-│                                         │
-│ Nhắc chớp mắt (phút): [5 ▼] 04:32 [Test]│
-│                                         │
-│ Nhắc đứng dậy (phút): [45▼] 42:15 [Test]│
-│                                         │
-│ Vị trí thông báo: [Giữa màn hình ▼]     │
-│                                         │
-│ Reset khi idle: [2 phút ▼]              │
-│                                         │
-│─────────────────────────────────────────│
-│ Phiên bản: 1.1.0                        │
-│ Tác giả: Mitonios            [Thoát]    │
-└─────────────────────────────────────────┘
+```bash
+RUST_LOG=info cargo run --release
 ```
 
-#### Thời gian nhắc chớp mắt
-
-- Dropdown: 1 phút, 5 phút, 10 phút, 30 phút
-- Hiển thị countdown realtime (mm:ss)
-- Nút **Test**: Kiểm tra animation nhắc chớp mắt
-
-#### Thời gian nhắc đứng dậy
-
-- Dropdown: 30 phút, 45 phút, 60 phút
-- Hiển thị countdown realtime (mm:ss)
-- Nút **Test**: Kiểm tra animation nhắc đứng dậy
-
-#### Vị trí thông báo
-
-- Trên - Trái
-- Trên - Phải
-- Giữa màn hình (mặc định)
-- Dưới - Trái
-- Dưới - Phải
-
-#### Reset khi idle
-
-Khi user không hoạt động (không có input keyboard/mouse) vượt ngưỡng cài đặt:
-
-- Tạm dừng không hiển thị thông báo
-- Khi user trở lại hoạt động → reset countdown về từ đầu
-
-Options:
-
-- Tắt (không detect idle)
-- 1 phút
-- 2 phút (mặc định)
-- 3 phút
-- 5 phút
-- 10 phút
-
-#### Các nút điều khiển
-
-- **Thoát**: Đóng hoàn toàn ứng dụng
-- **Nút X (đóng cửa sổ)**: Thu nhỏ xuống tray (ứng dụng vẫn chạy nền)
-
-> **Lưu ý**: Cấu hình được **tự động lưu** khi thay đổi, không cần bấm nút Save.
-
-### Animation nhắc nhở
-
-Khi đến thời gian nhắc nhở, overlay 400x400 pixel hiển thị:
-
-- **Chớp mắt**: 😌 ↔ 🙂 (animation nhắm/mở mắt)
-- **Đứng dậy**: 🧍 ↔ 🧎 (animation đứng/quỳ)
-
-Animation hiển thị trong 5 giây rồi tự động tắt.
-
-## Kiến trúc ứng dụng
+### Cấu trúc dự án
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Main Thread                             │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              egui/eframe Config Window               │    │
-│  │         (poll messages mỗi 100ms)                   │    │
-│  └─────────────────────────────────────────────────────┘    │
-│                          ▲                                   │
-│                          │ std::sync::mpsc                   │
-│                          │                                   │
-│  ┌───────────────────────┴───────────────────────────┐      │
-│  │              Tray Event Handler Thread             │      │
-│  └───────────────────────┬───────────────────────────┘      │
-│                          │                                   │
-└──────────────────────────┼──────────────────────────────────┘
-                           │ std::sync::mpsc
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Background Threads                        │
-│  ┌─────────────────┐  ┌─────────────────┐                   │
-│  │   Tray Thread   │  │  Tokio Runtime  │                   │
-│  │  (Win32 msg     │  │  ┌───────────┐  │                   │
-│  │   loop)         │  │  │  Timer    │  │                   │
-│  └─────────────────┘  │  │  Manager  │  │                   │
-│                       │  └───────────┘  │                   │
-│                       └─────────────────┘                   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Cấu trúc dự án
-
-```
-blink-reminder/
+EyeAndSkeleton/
 ├── src/
 │   ├── main.rs              # Entry point, khởi tạo threads và channels
 │   ├── tray.rs              # System tray icon và menu (Win32 API)
 │   ├── config.rs            # Cấu hình và persistence JSON
-│   ├── config_window.rs     # Config window sử dụng egui/eframe
+│   ├── config_window.rs     # Config window (egui/eframe)
 │   ├── timer.rs             # Dual timer với tokio async + idle detection
-│   ├── overlay.rs           # Transparent overlay với Direct2D/DirectWrite
+│   ├── overlay.rs           # Transparent overlay (Direct2D/DirectWrite)
 │   └── singleton.rs         # Singleton pattern và IPC
 ├── build.rs                 # Embed icon và manifest vào executable
 ├── app.manifest             # DPI awareness manifest
 ├── icon.ico                 # Application icon
 ├── Cargo.toml               # Dependencies và metadata
-└── README.md                # Tài liệu này
+└── README.md
 ```
 
-## Dependencies
+### Kiến trúc
 
-| Mục đích        | Crate                 | Mô tả                              |
-| --------------- | --------------------- | ---------------------------------- |
-| GUI Framework   | `eframe`, `egui`      | Cross-platform immediate mode GUI  |
-| Win32 APIs      | `windows`             | Tray, overlay, singleton, Direct2D |
-| Async Runtime   | `tokio`               | Xử lý timers bất đồng bộ           |
-| Config          | `serde`, `serde_json` | Serialize/deserialize JSON         |
-| App directories | `directories`         | Đường dẫn %APPDATA%                |
-| Error handling  | `anyhow`              | Error handling                     |
-| Logging         | `log`, `env_logger`   | Logging (RUST_LOG=info để debug)   |
-| Build           | `winres`              | Embed icon và manifest vào exe     |
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Main Thread                            │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              egui/eframe Config Window               │    │
+│  │         (poll messages mỗi 100ms)                   │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                          ▲                                  │
+│                          │ std::sync::mpsc                  │
+│  ┌───────────────────────┴───────────────────────────┐      │
+│  │              Tray Event Handler Thread             │      │
+│  └───────────────────────┬───────────────────────────┘      │
+└──────────────────────────┼──────────────────────────────────┘
+                           │ std::sync::mpsc
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Background Threads                       │
+│  ┌─────────────────┐  ┌─────────────────┐                  │
+│  │   Tray Thread   │  │  Tokio Runtime  │                  │
+│  │  (Win32 msg     │  │  ┌───────────┐  │                  │
+│  │   loop)         │  │  │  Timer    │  │                  │
+│  └─────────────────┘  │  │  Manager  │  │                  │
+│                       │  └───────────┘  │                  │
+│                       └─────────────────┘                  │
+└─────────────────────────────────────────────────────────────┘
+```
 
-## License
+### Dependencies
 
-Dự án này được phân phối dưới giấy phép MIT. Xem file `LICENSE` để biết thêm chi tiết.
+| Mục đích | Crate | Mô tả |
+|:---|:---|:---|
+| GUI Framework | `eframe`, `egui` | Immediate mode GUI |
+| Win32 APIs | `windows` | Tray, overlay, singleton, Direct2D |
+| Async Runtime | `tokio` | Timers bất đồng bộ |
+| Config | `serde`, `serde_json` | Serialize/deserialize JSON |
+| App directories | `directories` | Đường dẫn %APPDATA% |
+| Error handling | `anyhow` | Error handling |
+| Logging | `log`, `env_logger` | Logging |
+| Build | `winres` | Embed icon và manifest |
 
-## Ký mã số & phát hành
+### Ký mã số & phát hành
 
-- Build release: `cargo build --release`
-- Ký file exe: `signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a target\release\blink-reminder.exe`
-- Kiểm tra chữ ký: `signtool verify /pa target\release\blink-reminder.exe`
-- Phân phối: chỉ cần phát hành file `blink-reminder.exe` đã ký
+```bash
+# Build release
+cargo build --release
 
-## Khắc phục sự cố
+# Ký file exe (cần certificate)
+signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a target\release\blink-reminder.exe
 
-### Windows Defender cảnh báo
+# Kiểm tra chữ ký
+signtool verify /pa target\release\blink-reminder.exe
+```
 
-Ứng dụng có thể bị Windows Defender đánh dấu là nghi ngờ vì:
+### Đóng góp
 
-- Chạy nền và tạo system tray icon
-- Tạo overlay windows
+Mọi đóng góp đều được chào đón! Vui lòng tạo [issue](https://github.com/Mitonios/EyeAndSkeleton/issues) hoặc pull request.
 
-**Giải pháp:**
+</details>
 
-1. Thêm ứng dụng vào danh sách loại trừ của Windows Defender
-2. Hoặc ký code với certificate (cho production)
+---
 
-### Overlay không hiển thị
-
-Nếu overlay emoji không hiện:
-
-- Đảm bảo không có ứng dụng fullscreen che khuất
-- Restart ứng dụng
-- Kiểm tra GPU driver (Direct2D yêu cầu driver đồ họa hoạt động)
-
-### Config không lưu
-
-Nếu cài đặt không được lưu:
-
-- Kiểm tra quyền ghi vào thư mục `%APPDATA%/blink-reminder/`
-- Chạy với logging: `RUST_LOG=info blink-reminder.exe`
-
-### Icon không hiển thị
-
-Nếu tray icon không hiện:
-
-- Đảm bảo `icon.ico` nằm cùng thư mục với file `.exe`
-- Rebuild với `cargo build --release`
-
-### Font tiếng Việt không hiển thị
-
-Ứng dụng tự động load font Segoe UI từ hệ thống Windows. Nếu vẫn lỗi:
-
-- Đảm bảo font `C:\Windows\Fonts\segoeui.ttf` tồn tại
-- Thử cài đặt lại font Segoe UI
-
-## Đóng góp
-
-Mọi đóng góp đều được chào đón! Vui lòng tạo issue hoặc pull request.
-
-## Liên hệ
-
-Nếu bạn có câu hỏi hoặc gặp vấn đề, vui lòng tạo issue trên GitHub.
+<div align="center">
+  <p>
+    <strong>Blink Reminder</strong> — Được tạo bởi <a href="https://github.com/Mitonios">Mitonios</a> with AI
+    <br>
+    Phân phối theo giấy phép <a href="LICENSE">MIT</a> · Phiên bản 1.1.0
+  </p>
+  <p>
+    <sub>Đôi mắt của bạn xứng đáng được chăm sóc 👁️</sub>
+  </p>
+</div>

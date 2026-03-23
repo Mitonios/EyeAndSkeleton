@@ -3,7 +3,11 @@
     "allow": [
       "Bash(cargo build:*)",
       "Bash(cargo test:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(gh --version)",
+      "Bash(gh release:*)",
+      "Bash(find d:WORKEyeAndSkeleton -type f -name *.pem -o -name *.key -o -name *.p12 -o -name *.pfx)",
+      "Bash(find d:WORKEyeAndSkeleton -type f -name *.rs -exec wc -l {} +)"
     ]
   }
 }
