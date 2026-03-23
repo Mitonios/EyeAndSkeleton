@@ -7,8 +7,10 @@ use crate::overlay;
 use crate::timer;
 use eframe::egui::{self, FontData, FontDefinitions, FontFamily};
 use std::sync::mpsc as std_mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::mpsc as tokio_mpsc;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Blink interval options (phút)
 const BLINK_OPTIONS: [u32; 4] = [1, 5, 10, 30];
@@ -20,6 +22,36 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const APP_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 /// Build info từ build.rs (timestamp + git hash)
 const BUILD_INFO: &str = env!("BUILD_INFO");
+
+/// Tìm HWND của config window theo title
+pub fn find_config_hwnd() -> Option<HWND> {
+    let title: Vec<u16> = "Blink Reminder - Cấu hình\0".encode_utf16().collect();
+    match unsafe { FindWindowW(None, windows::core::PCWSTR(title.as_ptr())) } {
+        Ok(hwnd) => {
+            log::info!("Found config window HWND: {:?}", hwnd);
+            Some(hwnd)
+        }
+        Err(e) => {
+            log::warn!("Could not find config window: {:?}", e);
+            None
+        }
+    }
+}
+
+/// Ẩn window hoàn toàn bằng Win32 SW_HIDE
+fn hide_to_tray(hwnd: HWND) {
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_HIDE);
+    }
+}
+
+/// Hiện window lại bằng Win32 SW_SHOW + đặt foreground
+pub fn restore_from_tray(hwnd: HWND) {
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOW);
+        let _ = SetForegroundWindow(hwnd);
+    }
+}
 
 /// Messages từ background thread đến UI
 #[derive(Debug, Clone)]
@@ -48,6 +80,8 @@ pub struct ConfigApp {
     ui_rx: Option<std_mpsc::Receiver<UiMessage>>,
     /// Flag để request exit
     should_exit: bool,
+    /// Shared egui context để external threads có thể đánh thức event loop
+    egui_ctx: Arc<OnceLock<egui::Context>>,
 }
 
 impl ConfigApp {
@@ -56,6 +90,7 @@ impl ConfigApp {
         config: AppConfig,
         config_tx: Option<tokio_mpsc::Sender<Arc<AppConfig>>>,
         ui_rx: Option<std_mpsc::Receiver<UiMessage>>,
+        egui_ctx: Arc<OnceLock<egui::Context>>,
     ) -> Self {
         let blink_idx = BLINK_OPTIONS
             .iter()
@@ -80,6 +115,7 @@ impl ConfigApp {
             config_tx,
             ui_rx,
             should_exit: false,
+            egui_ctx,
         }
     }
 
@@ -112,6 +148,9 @@ impl ConfigApp {
 
 impl eframe::App for ConfigApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Store egui context lần đầu để external threads có thể đánh thức event loop
+        let _ = self.egui_ctx.set(ctx.clone());
+
         // Poll UI messages từ tray (std::sync::mpsc - non-blocking)
         if let Some(rx) = &self.ui_rx {
             // Try to receive all pending messages
@@ -120,8 +159,9 @@ impl eframe::App for ConfigApp {
                 match msg {
                     UiMessage::ShowConfig => {
                         log::info!("ShowConfig: Making window visible and focused");
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                        if let Some(hwnd) = find_config_hwnd() {
+                            restore_from_tray(hwnd);
+                        }
                         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                     }
                     UiMessage::Exit => {
@@ -307,7 +347,9 @@ impl eframe::App for ConfigApp {
         // Handle close button - minimize to tray instead of closing (unless exit requested)
         if !self.should_exit && ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            if let Some(hwnd) = find_config_hwnd() {
+                hide_to_tray(hwnd);
+            }
         }
     }
 }
@@ -317,6 +359,7 @@ pub fn run_config_window(
     config: AppConfig,
     config_tx: Option<tokio_mpsc::Sender<Arc<AppConfig>>>,
     ui_rx: Option<std_mpsc::Receiver<UiMessage>>,
+    egui_ctx: Arc<OnceLock<egui::Context>>,
 ) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -340,7 +383,7 @@ pub fn run_config_window(
             cc.egui_ctx.set_visuals(visuals);
 
             setup_custom_fonts(&cc.egui_ctx);
-            Ok(Box::new(ConfigApp::new(config, config_tx, ui_rx)))
+            Ok(Box::new(ConfigApp::new(config, config_tx, ui_rx, egui_ctx)))
         }),
     )
 }
